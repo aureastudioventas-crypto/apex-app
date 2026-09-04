@@ -1,0 +1,7 @@
+{
+  "name": "APEX TUNING ENGINE — FH5",
+  "description": "Sistema inteligente de ingeniería de reglajes para Forza Horizon 5. Diagnóstico dinámico, baseline determinista y evolución de setups.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
