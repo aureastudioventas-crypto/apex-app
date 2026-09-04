@@ -198,7 +198,8 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
 
         <div className="space-y-4">
           {historyItems.map((item, idx) => {
-            const isCurrent = currentTune.versionTag === item.versionName;
+            const isCurrent = currentTune.versionTag === item.versionName || currentTune.versionTag === item.versionTag;
+            const isDemo = item.versionTag?.includes('DEMO') || item.versionName?.includes('DEMO');
             return (
               <div
                 key={item.id}
@@ -209,7 +210,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
                 }`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex flex-wrap items-center gap-2.5">
                     <span className="font-mono text-xs font-black bg-slate-800 text-cyan-400 px-2 py-0.5 rounded border border-slate-700">
                       #{item.versionNumber}
                     </span>
@@ -219,6 +220,11 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
                     {isCurrent && (
                       <span className="font-mono text-[10px] bg-cyan-950 text-cyan-400 px-2 py-0.5 rounded border border-cyan-800 font-bold">
                         EN PISTA
+                      </span>
+                    )}
+                    {isDemo && (
+                      <span className="font-mono text-[10px] bg-amber-950/70 text-amber-300 px-2 py-0.5 rounded border border-amber-800/60 font-semibold">
+                        DEMO / BASELINE EXPERIMENTAL
                       </span>
                     )}
                   </div>

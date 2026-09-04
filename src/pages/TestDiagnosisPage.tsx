@@ -68,7 +68,7 @@ export const TestDiagnosisPage: React.FC<TestDiagnosisPageProps> = ({
       pilotNotes,
     };
 
-    const results = diagnoseTestSession(session, tune);
+    const results = diagnoseTestSession(session, tune, vehicle);
     setDiagnosisResults(results);
     setAppliedIntervention(null);
   };
@@ -435,14 +435,21 @@ export const TestDiagnosisPage: React.FC<TestDiagnosisPageProps> = ({
               {/* PRIMARY INTERVENTION CARD (1 SINGLE RECOMMENDATION) */}
               {diag.primaryIntervention && diag.primaryIntervention.parameterKey !== 'none' && (
                 <div className="bg-cyan-950/30 border-2 border-cyan-500/80 rounded-xl p-4.5 space-y-3">
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-mono text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
                       <Zap className="w-4 h-4 text-cyan-400" />
-                      INTERVENCIÓN PRIMARIA PRIORITARIA ({diag.primaryIntervention.priorityCategory})
+                      INTERVENCIÓN PRIMARIA PRIORITARIA ({diag.primaryIntervention.priority || diag.primaryIntervention.priorityCategory})
                     </span>
-                    <span className="font-mono text-[10px] bg-cyan-950 text-cyan-300 px-2 py-0.5 rounded border border-cyan-800 font-semibold">
-                      REGLA DE ORO: 1 SOLA MODIFICACIÓN
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {diag.primaryIntervention.direction && (
+                        <span className="font-mono text-[10px] bg-slate-900 text-cyan-300 px-2 py-0.5 rounded border border-cyan-700/60 font-bold uppercase">
+                          ACCIONES: {diag.primaryIntervention.direction}
+                        </span>
+                      )}
+                      <span className="font-mono text-[10px] bg-cyan-950 text-cyan-300 px-2 py-0.5 rounded border border-cyan-800 font-semibold">
+                        AISLAMIENTO DINÁMICO: 1 SOLA MODIFICACIÓN
+                      </span>
+                    </div>
                   </div>
 
                   <div className="bg-slate-950/90 p-3 rounded-lg border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-mono">
@@ -473,13 +480,28 @@ export const TestDiagnosisPage: React.FC<TestDiagnosisPageProps> = ({
                     </div>
                   </div>
 
-                  <div className="space-y-1.5 text-xs">
+                  <div className="space-y-2 text-xs">
                     <p className="text-slate-300 font-sans leading-relaxed">
-                      <strong>Por qué de la intervención:</strong> {diag.primaryIntervention.explanation}
+                      <strong>Fundamento técnico:</strong> {diag.primaryIntervention.reason || diag.primaryIntervention.explanation}
                     </p>
+                    {diag.primaryIntervention.expectedEffect && (
+                      <p className="text-emerald-300/90 font-sans leading-relaxed">
+                        <strong>Efecto esperado:</strong> {diag.primaryIntervention.expectedEffect}
+                      </p>
+                    )}
+                    {diag.primaryIntervention.risk && (
+                      <p className="text-amber-300/90 font-sans text-[11px]">
+                        <strong>Riesgo o compromiso dinámico:</strong> {diag.primaryIntervention.risk}
+                      </p>
+                    )}
                     <p className="text-cyan-300 font-mono text-[11px] font-semibold">
-                      <strong>Instrucción para FH5:</strong> {diag.primaryIntervention.actionInstruction}
+                      <strong>Instrucción en FH5:</strong> {diag.primaryIntervention.actionInstruction}
                     </p>
+                    {diag.primaryIntervention.retestInstruction && (
+                      <p className="text-slate-400 font-mono text-[11px]">
+                        <strong>Protocolo de re-test:</strong> {diag.primaryIntervention.retestInstruction}
+                      </p>
+                    )}
                   </div>
 
                   <div className="pt-2 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">

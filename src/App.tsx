@@ -77,24 +77,40 @@ export default function App() {
   }, [activeVehicleId]);
 
   const activeVehicle = vehicles.find((v) => v.id === activeVehicleId) || vehicles[0] || null;
-  const activeTune = activeVehicle ? tunes[activeVehicle.id] || null : null;
+  const activeTune = activeVehicle
+    ? tunes[`${activeVehicle.id}__${activeVehicle.currentDiscipline}`] || tunes[activeVehicle.id] || null
+    : null;
 
   // Handler: Select Vehicle
   const handleSelectVehicle = (id: string) => {
     setActiveVehicleId(id);
+    StorageService.setActiveVehicleId(id);
     const v = vehicles.find((veh) => veh.id === id);
-    if (v && !tunes[id]) {
-      const baseline = generateBaselineTune(v, v.currentDiscipline || 'ROAD RACING');
-      setTunes((prev) => ({ ...prev, [id]: baseline }));
-      StorageService.saveTune(baseline);
+    if (v) {
+      const disc = v.currentDiscipline || 'ROAD RACING';
+      const compositeKey = `${v.id}__${disc}`;
+      if (!tunes[compositeKey] && !tunes[id]) {
+        const tuneLoaded = StorageService.getTune(v.id, disc);
+        if (tuneLoaded) {
+          setTunes((prev) => ({
+            ...prev,
+            [compositeKey]: tuneLoaded,
+            [id]: tuneLoaded,
+            [tuneLoaded.id]: tuneLoaded,
+          }));
+        }
+      }
     }
   };
 
-  // Handler: Update Tune (and save to storage)
+  // Handler: Update Tune (and save to storage without overwriting other disciplines)
   const handleUpdateTune = (updatedTune: Tune) => {
+    const compositeKey = `${updatedTune.vehicleId}__${updatedTune.discipline}`;
     setTunes((prev) => ({
       ...prev,
+      [compositeKey]: updatedTune,
       [updatedTune.vehicleId]: updatedTune,
+      [updatedTune.id]: updatedTune,
     }));
     StorageService.saveTune(updatedTune);
   };
@@ -111,8 +127,11 @@ export default function App() {
       id: `ver-${Date.now()}`,
       tuneId: tuneToSave.id,
       vehicleId: tuneToSave.vehicleId,
+      discipline: tuneToSave.discipline,
       versionNumber: nextVer,
       versionName: versionName || `v${nextVer}`,
+      versionTag: versionName || `v${nextVer}`,
+      parentVersionId: null,
       date: new Date().toLocaleDateString('es-ES', {
         day: '2-digit',
         month: 'short',
@@ -120,6 +139,8 @@ export default function App() {
         hour: '2-digit',
         minute: '2-digit',
       }),
+      changes: [notes || 'Actualización de reglaje'],
+      originSymptom: 'Afinación en Tune Studio',
       engineeringReason: notes || 'Optimización dinámica en Tune Studio',
       balanceSnapshot: tuneToSave.balance,
       parameterSnapshots: paramSnapshots,

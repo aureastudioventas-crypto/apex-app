@@ -1,9 +1,12 @@
 /**
  * APEX TUNING ENGINE — FH5
- * SERVICIO DE ALMACENAMIENTO LOCAL (PERSISTENCIA DETERMINISTA)
+ * SERVICIO DE ALMACENAMIENTO LOCAL V1.1 (Persistencia Determinista)
+ *
+ * Soporta almacenamiento multiversión y multidisciplina por vehículo sin sobrescrituras accidentales.
+ * Marca explícitamente los datos demo como "DEMO / BASELINE EXPERIMENTAL".
  */
 
-import { Vehicle, Tune, TestSession, TuneVersionHistoryItem } from '../types';
+import { Vehicle, Tune, Discipline, TestSession, TuneVersionHistoryItem } from '../types';
 import { DEMO_VEHICLES } from '../data/demoVehicles';
 import { generateBaselineTune } from '../engine/baselineEngine';
 
@@ -66,6 +69,16 @@ export const StorageService = {
   deleteVehicle(id: string): void {
     const list = this.getVehicles().filter((v) => v.id !== id);
     localStorage.setItem(STORAGE_KEYS.VEHICLES, JSON.stringify(list));
+
+    // También limpiar tunes asociados
+    const tunes = this.getTunes();
+    const filteredTunes: Record<string, Tune> = {};
+    (Object.entries(tunes) as [string, Tune][]).forEach(([key, t]) => {
+      if (t.vehicleId !== id) {
+        filteredTunes[key] = t;
+      }
+    });
+    localStorage.setItem(STORAGE_KEYS.TUNES, JSON.stringify(filteredTunes));
   },
 
   getActiveVehicleId(): string {
@@ -82,24 +95,52 @@ export const StorageService = {
   getTunes(): Record<string, Tune> {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.TUNES);
-      return data ? JSON.parse(data) : {};
+      return data ? (JSON.parse(data) as Record<string, Tune>) : {};
     } catch {
       return {};
     }
   },
 
-  getTuneForVehicle(vehicleId: string): Tune | null {
-    const tunes = this.getTunes();
-    if (tunes[vehicleId]) return tunes[vehicleId];
+  /**
+   * Obtiene todos los reglajes asociados a un vehículo específico.
+   */
+  getTunesForVehicle(vehicleId: string): Tune[] {
+    const tunesMap = this.getTunes();
+    return (Object.values(tunesMap) as Tune[]).filter((t) => t.vehicleId === vehicleId);
+  },
 
-    // If not found, generate a baseline tune
+  /**
+   * Obtiene un reglaje por su ID único.
+   */
+  getTuneById(tuneId: string): Tune | null {
+    const tunesMap = this.getTunes();
+    if (tunesMap[tuneId]) return tunesMap[tuneId];
+    // Buscar si está indexado con otra clave
+    const found = (Object.values(tunesMap) as Tune[]).find((t) => t.id === tuneId);
+    return found || null;
+  },
+
+  /**
+   * Obtiene el reglaje para un vehículo y disciplina específicos.
+   * Si no existe, genera uno baseline determinista sin sobreescribir otras disciplinas.
+   */
+  getTune(vehicleId: string, discipline: Discipline): Tune | null {
+    const tunesMap = this.getTunes();
+
+    // 1. Buscar coincidencia exacta de vehicleId + discipline
+    const existing = (Object.values(tunesMap) as Tune[]).find(
+      (t) => t.vehicleId === vehicleId && t.discipline === discipline
+    );
+    if (existing) return existing;
+
+    // 2. Si no existe, buscar el vehículo para generar un baseline determinista
     const vehicles = this.getVehicles();
     const vehicle = vehicles.find((v) => v.id === vehicleId);
     if (!vehicle) return null;
 
     const newTune = generateBaselineTune(
       vehicle,
-      vehicle.currentDiscipline,
+      discipline,
       DEFAULT_DRIVER_PROFILE,
       DEFAULT_HARDWARE_PROFILE
     );
@@ -107,9 +148,43 @@ export const StorageService = {
     return newTune;
   },
 
+  /**
+   * Retrocompatibilidad con la firma anterior getTuneForVehicle(vehicleId).
+   */
+  getTuneForVehicle(vehicleId: string): Tune | null {
+    const vehicles = this.getVehicles();
+    const vehicle = vehicles.find((v) => v.id === vehicleId);
+    const discipline = vehicle?.currentDiscipline || 'ROAD RACING';
+    return this.getTune(vehicleId, discipline);
+  },
+
+  /**
+   * Guarda un reglaje indexado por su ID único.
+   * No sobrescribe los reglajes de otras disciplinas del mismo vehículo.
+   */
   saveTune(tune: Tune): void {
     const tunes = this.getTunes();
-    tunes[tune.vehicleId] = { ...tune, updatedAt: new Date().toISOString() };
+    // Guardar indexado por id único
+    tunes[tune.id] = { ...tune, updatedAt: new Date().toISOString() };
+
+    // Mantener también enlace de búsqueda rápida por clave compuesta si aplica
+    const compositeKey = `${tune.vehicleId}__${tune.discipline}`;
+    tunes[compositeKey] = tunes[tune.id];
+
+    localStorage.setItem(STORAGE_KEYS.TUNES, JSON.stringify(tunes));
+  },
+
+  /**
+   * Elimina un reglaje por su ID.
+   */
+  deleteTune(tuneId: string): void {
+    const tunes = this.getTunes();
+    const tuneToDelete = tunes[tuneId] || (Object.values(tunes) as Tune[]).find((t) => t.id === tuneId);
+
+    delete tunes[tuneId];
+    if (tuneToDelete) {
+      delete tunes[`${tuneToDelete.vehicleId}__${tuneToDelete.discipline}`];
+    }
     localStorage.setItem(STORAGE_KEYS.TUNES, JSON.stringify(tunes));
   },
 
@@ -154,6 +229,9 @@ export const StorageService = {
     this.saveHistoryItem(item);
   },
 
+  /**
+   * Inicializa datos demo claramente marcados como DEMO / BASELINE EXPERIMENTAL.
+   */
   initDemoData(): void {
     localStorage.setItem(STORAGE_KEYS.VEHICLES, JSON.stringify(DEMO_VEHICLES));
 
@@ -167,6 +245,13 @@ export const StorageService = {
         DEFAULT_DRIVER_PROFILE,
         DEFAULT_HARDWARE_PROFILE
       );
+      // Asignar etiquetas explícitas de demo
+      baseTune.versionTag = 'DEMO / BASELINE EXPERIMENTAL';
+      baseTune.notes = 'DEMO / BASELINE EXPERIMENTAL: Punto inicial calculado por ingeniería. No representa un setup final de competición.';
+
+      tunes[baseTune.id] = baseTune;
+      tunes[`${veh.id}__${veh.currentDiscipline}`] = baseTune;
+      // Compatibilidad con claves legacy
       tunes[veh.id] = baseTune;
 
       const snapshots: Record<string, number> = {};
@@ -178,15 +263,19 @@ export const StorageService = {
         id: `hist-${veh.id}-1`,
         tuneId: baseTune.id,
         vehicleId: veh.id,
+        discipline: veh.currentDiscipline,
         versionNumber: 1,
-        versionName: 'BASE v1.0 (Ingeniería)',
+        versionTag: 'DEMO / BASELINE EXPERIMENTAL',
+        parentVersionId: null,
         date: new Date().toLocaleDateString('es-ES'),
-        changesSummary: ['Generación inicial de reglaje baseline determinista.'],
+        changes: ['Generación inicial de reglaje baseline determinista.'],
         parameterSnapshots: snapshots,
         balanceSnapshot: baseTune.balance,
-        originSymptom: 'Creación de vehículo',
-        engineeringReason: `Calibrado para masa de ${veh.weightKg} kg y distribución ${(veh.frontWeightRatio * 100).toFixed(0)}% en disciplina ${veh.currentDiscipline}.`,
-        testResult: 'Sin cambios',
+        originSymptom: 'Creación de vehículo demo',
+        engineeringReason: `DEMO / BASELINE EXPERIMENTAL: Calibrado para ${veh.weightKg} kg con distribución ${(veh.frontWeightRatio * 100).toFixed(0)}% en ${veh.currentDiscipline}.`,
+        testResult: 'SIN CAMBIO',
+        versionName: 'DEMO / BASELINE EXPERIMENTAL (v1.0)',
+        changesSummary: ['Generación inicial de reglaje baseline determinista.'],
       });
     });
 

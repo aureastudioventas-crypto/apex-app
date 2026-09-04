@@ -154,12 +154,25 @@ export const ParameterCard: React.FC<ParameterCardProps> = ({
       {/* Detailed Technical Explanation */}
       {expanded && (
         <div className="mt-2.5 pt-2 border-t border-slate-800 space-y-2 text-xs font-sans">
+          {param.source && (
+            <div className="flex items-center justify-between font-mono text-[10px] text-slate-400">
+              <span>
+                ORIGEN: <strong className="text-cyan-400">{param.source}</strong>
+              </span>
+              {param.confidence !== undefined && (
+                <span>
+                  CONFIANZA CINEMÁTICA: <strong className="text-emerald-400">{param.confidence}%</strong>
+                </span>
+              )}
+            </div>
+          )}
+
           <div className="bg-slate-950/70 p-2.5 rounded border border-slate-800/80">
             <span className="font-mono text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
-              POR QUÉ DE ESTE VALOR BASELINE:
+              POR QUÉ DE ESTE VALOR:
             </span>
             <p className="text-slate-300 text-[11px] leading-relaxed">
-              {param.why}
+              {param.engineeringExplanation?.why || param.why}
             </p>
           </div>
 
@@ -178,12 +191,36 @@ export const ParameterCard: React.FC<ParameterCardProps> = ({
             </div>
           </div>
 
-          {param.nextAction && (
+          {param.engineeringExplanation?.expectedEffect && (
+            <div className="bg-slate-950/60 p-2 rounded border border-slate-800 text-[11px]">
+              <span className="font-mono text-[10px] text-emerald-400 font-bold block mb-0.5">
+                EFECTO ESPERADO EN PISTA:
+              </span>
+              <p className="text-slate-300 leading-tight">
+                {param.engineeringExplanation.expectedEffect}
+              </p>
+            </div>
+          )}
+
+          {param.engineeringExplanation?.ifProblemPersists && (
+            <div className="bg-amber-950/30 p-2 rounded border border-amber-800/40 text-[11px]">
+              <span className="font-mono text-[10px] text-amber-400 font-bold block mb-0.5">
+                SI EL PROBLEMA PERSISTE:
+              </span>
+              <p className="text-slate-300 leading-tight">
+                {param.engineeringExplanation.ifProblemPersists}
+              </p>
+            </div>
+          )}
+
+          {(param.engineeringExplanation?.nextAction || param.nextAction) && (
             <div className="bg-cyan-950/40 p-2 rounded border border-cyan-800/50 flex items-start gap-1.5 text-[11px]">
               <span className="font-mono text-cyan-400 font-bold whitespace-nowrap">
                 ACCIÓN DE PISTA:
               </span>
-              <span className="text-slate-300">{param.nextAction}</span>
+              <span className="text-slate-300">
+                {param.engineeringExplanation?.nextAction || param.nextAction}
+              </span>
             </div>
           )}
         </div>

@@ -16,6 +16,8 @@ import {
   Disc,
   Eye,
   Zap,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   Vehicle,
@@ -28,6 +30,8 @@ import {
 } from '../types';
 import { DISCIPLINE_PROFILES } from '../engine/matrixKnowledge';
 import { generateBaselineTune, calculateVehicleBalance } from '../engine/baselineEngine';
+import { validateTune } from '../services/validation';
+import { StorageService } from '../services/storage';
 import { BalanceMap } from '../components/BalanceMap';
 import { TechnicalGauge } from '../components/TechnicalGauge';
 import { ParameterCard } from '../components/ParameterCard';
@@ -102,15 +106,20 @@ export const TuneStudioPage: React.FC<TuneStudioPageProps> = ({
     onUpdateTune(updatedTune);
   };
 
-  // Change discipline and regenerate baseline
+  // Change discipline: retrieve saved tune or generate baseline without overwriting others
   const handleSelectDiscipline = (disc: Discipline) => {
-    const newBaseline = generateBaselineTune(
-      vehicle,
-      disc,
-      tune.driverProfile,
-      tune.hardwareProfile
-    );
-    onUpdateTune(newBaseline);
+    const existing = StorageService.getTune(vehicle.id, disc);
+    if (existing) {
+      onUpdateTune(existing);
+    } else {
+      const newBaseline = generateBaselineTune(
+        vehicle,
+        disc,
+        tune.driverProfile,
+        tune.hardwareProfile
+      );
+      onUpdateTune(newBaseline);
+    }
   };
 
   // Regenerate baseline with current driver profile
@@ -142,6 +151,9 @@ export const TuneStudioPage: React.FC<TuneStudioPageProps> = ({
     if (selectedCategory === 'ALL') return true;
     return p.category === selectedCategory;
   });
+
+  // Engineering Validation of tune vs FH5 rules and vehicle equipment
+  const validationResult = validateTune(tune, vehicle);
 
   // Export summary to clipboard
   const handleCopySummary = () => {
@@ -277,6 +289,35 @@ export const TuneStudioPage: React.FC<TuneStudioPageProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Real-time Engineering Validation Status */}
+          {(!validationResult.isValid || validationResult.warnings.length > 0) && (
+            <div className="mt-3 bg-slate-950 rounded-lg p-3.5 border border-amber-800/50 text-xs font-mono space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 font-bold text-amber-400 uppercase text-[11px]">
+                  <AlertTriangle className="w-4 h-4 text-amber-400" />
+                  REVISIÓN DE INGENIERÍA Y COMPATIBILIDAD FH5
+                </span>
+                <span className="text-[10px] text-slate-500">
+                  {validationResult.errors.length} error(es) • {validationResult.warnings.length} aviso(s)
+                </span>
+              </div>
+              <div className="space-y-1 text-[11px] font-sans">
+                {validationResult.errors.map((err, idx) => (
+                  <div key={`err-${idx}`} className="flex items-start gap-1.5 text-rose-300">
+                    <span className="font-mono text-rose-400 font-bold">•</span>
+                    <span>{err.message}</span>
+                  </div>
+                ))}
+                {validationResult.warnings.map((warn, idx) => (
+                  <div key={`warn-${idx}`} className="flex items-start gap-1.5 text-amber-300/90">
+                    <span className="font-mono text-amber-400 font-bold">•</span>
+                    <span>{warn.message}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

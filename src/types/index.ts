@@ -88,6 +88,8 @@ export interface DriverProfile {
 
 export interface HardwareProfile {
   deviceType: 'CONTROLADOR' | 'VOLANTE';
+  wheelModel?: string; // e.g. 'Logitech G920', 'Fanatec CSL DD', 'Thrustmaster T300'
+  rotationDegrees?: number; // e.g. 540, 900
   wheelConfig?: {
     brand: string;
     model: string;
@@ -116,6 +118,14 @@ export type ParameterCategory =
   | 'BRAKES'
   | 'DIFFERENTIAL';
 
+export interface EngineeringExplanation {
+  what: string;
+  why: string;
+  expectedEffect: string;
+  ifProblemPersists: string;
+  nextAction: string;
+}
+
 export interface TuneParameter {
   key: string;
   category: ParameterCategory;
@@ -130,8 +140,12 @@ export interface TuneParameter {
   effectIncrease: string;
   effectDecrease: string;
   relatedSymptoms: string[];
-  nextAction: string;
-  isAvailable: boolean; // Ocultar si la pieza no está instalada
+  nextAction?: string;
+  available: boolean; // Ocultar si la pieza no está instalada en el vehículo
+  isAvailable: boolean; // Alias de compatibilidad
+  source: 'BASELINE' | 'USER' | 'DIAGNOSIS' | 'MODIFIER';
+  confidence: number; // 0 - 100
+  engineeringExplanation: EngineeringExplanation;
 }
 
 export interface VehicleBalance {
@@ -151,7 +165,8 @@ export interface Tune {
   discipline: Discipline;
   name: string;
   version: number;
-  versionTag: string; // e.g. "BASE v1", "TEST 01", "v2.0"
+  versionTag: string; // e.g. "BASE v1.0", "TEST 01", "v2.0"
+  status?: VehicleStatus;
   driverProfile: DriverProfile;
   hardwareProfile: HardwareProfile;
   parameters: Record<string, TuneParameter>;
@@ -161,12 +176,47 @@ export interface Tune {
   updatedAt: string;
 }
 
+export interface EngineeringRuleConditions {
+  drivetrain?: Drivetrain[];
+  discipline?: Discipline[];
+  powerRange?: [number, number];
+  weightRange?: [number, number];
+  frontWeightRange?: [number, number];
+  tireCompound?: TireCompound[];
+  installedParts?: (keyof VehicleParts)[];
+  driverProfileConditions?: Partial<Record<keyof DriverProfile, { min?: number; max?: number }>>;
+  hardwareProfileConditions?: { deviceType?: ('CONTROLADOR' | 'VOLANTE')[] };
+}
+
+export interface EngineeringRule {
+  id: string;
+  parameterKey: string;
+  conditions: EngineeringRuleConditions;
+  priority: number; // 1 (más alta) a 10
+  direction: 'AUMENTAR' | 'DISMINUIR' | 'PROPORCIONAL' | 'FIJO';
+  magnitude: number;
+  rationale: string;
+  sideEffects: string;
+  relatedSymptoms: string[];
+}
+
+export interface DisciplineProfile {
+  name: string;
+  objective: string;
+  priorities: string[];
+  priorityParameters: string[];
+  preferredBehavior: string;
+  characteristics: string;
+  parameterModifiers?: Record<string, { delta?: number; multiplier?: number; rationale: string }>;
+}
+
 export interface TestSession {
   id: string;
   tuneId: string;
   vehicleId: string;
-  date: string;
+  versionId?: string;
   discipline: Discipline;
+  date: string;
   trackName: string;
   surface: 'Asfalto liso' | 'Asfalto irregular' | 'Tierra suelta' | 'Barro' | 'Arena' | 'Mixto';
   conditions: 'Seco' | 'Húmedo' | 'Lluvia' | 'Tormenta' | 'Caluroso';
@@ -179,7 +229,11 @@ export interface TestSession {
     suspension?: 'Rebota' | 'Toca fondo' | 'Demasiado rígido' | 'Demasiado blando' | 'Pierde contacto';
     straight?: 'Nervioso' | 'Estable' | 'Lento';
   };
+  driverComment?: string;
   pilotNotes?: string;
+  diagnosis?: DiagnosisResult[];
+  intervention?: PrimaryIntervention;
+  result?: 'EMPEORÓ' | 'SIN CAMBIO' | 'MEJORÓ' | 'RESUELTO';
 }
 
 export interface DiagnosisCause {
@@ -196,9 +250,16 @@ export interface PrimaryIntervention {
   recommendedValue: number;
   unit: string;
   delta: number;
-  explanation: string;
-  actionInstruction: string;
-  priorityCategory: 'Seguridad' | 'Neumáticos' | 'Balance' | 'Suspensión' | 'Aero' | 'Diferencial' | 'Transmisión';
+  direction: 'AUMENTAR' | 'DISMINUIR' | 'MANTENER';
+  reason: string;
+  expectedEffect: string;
+  risk: string;
+  priority: 'Seguridad' | 'Neumáticos' | 'Balance' | 'Suspensión' | 'Aero' | 'Diferencial' | 'Transmisión';
+  retestInstruction: string;
+  // Aliases de compatibilidad
+  actionInstruction?: string;
+  priorityCategory?: 'Seguridad' | 'Neumáticos' | 'Balance' | 'Suspensión' | 'Aero' | 'Diferencial' | 'Transmisión';
+  explanation?: string;
 }
 
 export interface DiagnosisResult {
@@ -209,21 +270,31 @@ export interface DiagnosisResult {
   nextStepWarning: string;
 }
 
-export interface TuneVersionHistoryItem {
+export type TestResultOutcome = 'EMPEORÓ' | 'SIN CAMBIO' | 'MEJORÓ' | 'RESUELTO';
+
+export interface TuneVersion {
   id: string;
   tuneId: string;
   vehicleId: string;
+  discipline: Discipline;
   versionNumber: number;
-  versionName: string;
+  versionTag: string; // e.g. "v1.0", "v1.1 - Fix ARB"
+  parentVersionId: string | null;
   date: string;
-  changesSummary: string[];
   parameterSnapshots: Record<string, number>;
   balanceSnapshot: VehicleBalance;
-  originSymptom?: string;
+  changes: string[];
+  originSymptom: string;
   engineeringReason: string;
-  testResult?: 'Mejoró' | 'Sin cambios' | 'Empeoró';
+  testResult?: TestResultOutcome;
+  driverComment?: string;
+  // Aliases de compatibilidad
+  versionName?: string;
+  changesSummary?: string[];
   pilotFeedback?: string;
 }
+
+export type TuneVersionHistoryItem = TuneVersion;
 
 export interface MatrixItem {
   id: string;
@@ -245,4 +316,19 @@ export interface MatrixItem {
   };
   disciplineModifiers: Record<Discipline, string>;
   symptoms: string[];
+}
+
+export interface ValidationIssue {
+  parameterKey: string;
+  type: 'ERROR' | 'WARNING';
+  message: string;
+  currentValue?: number;
+  allowedRange?: [number, number];
+  unit?: string;
+}
+
+export interface ValidationResult {
+  isValid: boolean;
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
 }

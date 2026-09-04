@@ -1,25 +1,33 @@
 /**
  * APEX TUNING ENGINE — FH5
- * MOTOR DE DIAGNÓSTICO BASADO EN PROBABILIDAD Y PRIORIDAD
- * Identifica causas potenciales y determina UNA intervención primaria prioritaria
+ * MOTOR DE DIAGNÓSTICO BASADO EN PROBABILIDAD Y PRIORIDAD V1.1
+ *
+ * Flujo de Diagnóstico:
+ * SÍNTOMA -> CAUSAS CANDIDATAS -> PROBABILIDAD -> PRIORIDAD -> INTERVENCIÓN PRIMARIA ÚNICA -> EFECTO ESPERADO -> RE-TEST
+ *
+ * Principio: Separación estricta entre Baseline (punto de partida) y Diagnóstico (evolución reactiva).
+ * Lenguaje de ingeniería: Sin afirmaciones absolutas ("siempre", "obligatorio"). Se emplean términos como
+ * "punto inicial recomendado", "tendencia observada", "intervención prioritaria", "verificar en 2-3 vueltas".
  */
 
 import {
   TestSession,
   Tune,
+  Vehicle,
   DiagnosisResult,
   DiagnosisCause,
   PrimaryIntervention,
-  TuneParameter,
 } from '../types';
 
 export function diagnoseTestSession(
   session: TestSession,
-  currentTune: Tune
+  currentTune: Tune,
+  vehicle?: Vehicle
 ): DiagnosisResult[] {
   const results: DiagnosisResult[] = [];
   const symptoms = session.symptoms;
   const params = currentTune.parameters;
+  const drivetrain = vehicle?.drivetrain || 'AWD';
 
   // 1. Diagnóstico de Mitad de Curva (Mid Corner)
   if (symptoms.midCorner === 'Subviraje') {
@@ -28,38 +36,38 @@ export function diagnoseTestSession(
         component: 'Barra estabilizadora delantera (ARB)',
         parameterKey: 'arb_front',
         probability: 90,
-        rationale: 'Excesiva rigidez torsional lateral en el eje delantero satura el neumático exterior y no le permite morder el asfalto.',
+        rationale: 'Excesiva rigidez torsional lateral en el eje delantero tiende a saturar el neumático exterior, reduciendo el agarre lateral disponible en apoyo.',
       },
       {
         component: 'Camber delantero insuficiente',
         parameterKey: 'camber_front',
         probability: 80,
-        rationale: 'Con la carrocería apoyada, la banda de rodadura delantera no apoya plana y pierde adherencia lateral en el vértice.',
+        rationale: 'Con la carrocería inclinada en apoyo, la banda de rodadura no trabaja en su ángulo óptimo respecto al piso.',
       },
       {
-        component: 'Muelles delanteros excesivamente rígidos',
+        component: 'Muelles delanteros con rigidez elevada',
         parameterKey: 'springs_front',
         probability: 60,
-        rationale: 'La suspensión delantera no transfiere masa hacia la rueda exterior para generar agarre mecánico.',
+        rationale: 'La suspensión delantera limita la transferencia de carga hacia la rueda exterior reduciendo el agarre mecánico.',
       },
       {
         component: 'Presión de neumático delantero alta',
         parameterKey: 'tire_pressure_front',
         probability: 50,
-        rationale: 'El neumático delantero sobre-inflado reduce el área de la huella de contacto en apoyo.',
+        rationale: 'Presión por encima del rango óptimo reduce el área efectiva del parche de contacto.',
       },
       {
-        component: 'Aerodinámica delantera insuficiente',
+        component: 'Aerodinámica delantera reducida',
         parameterKey: 'aero_front',
-        probability: 30,
-        rationale: 'Si la curva se negocia por encima de 130 km/h, falta de downforce en el splitter frontal.',
+        probability: 35,
+        rationale: 'En curvas de velocidad media-alta (>130 km/h), la falta de carga vertical limita el agarre del tren delantero.',
       },
     ];
 
-    // Determinar la ÚNICA intervención primaria prioritaria siguiendo la jerarquía:
-    // Balance (ARB) es prioridad 3 y 90% probabilidad
     const currentArb = params.arb_front?.value ?? 30.0;
-    const recommendedArb = Math.max(params.arb_front?.min ?? 1.0, Number((currentArb - 3.5).toFixed(1)));
+    const minArb = params.arb_front?.min ?? 1.0;
+    const recommendedArb = Math.max(minArb, Number((currentArb - 3.0).toFixed(1)));
+    const delta = Number((recommendedArb - currentArb).toFixed(1));
 
     const primaryIntervention: PrimaryIntervention = {
       parameterKey: 'arb_front',
@@ -67,18 +75,25 @@ export function diagnoseTestSession(
       currentValue: currentArb,
       recommendedValue: recommendedArb,
       unit: '1.0 - 65.0',
-      delta: Number((recommendedArb - currentArb).toFixed(1)),
-      explanation: 'Reducir ligeramente la rigidez de la barra estabilizadora delantera para permitir mayor transferencia de carga al neumático exterior delantero.',
-      actionInstruction: `Disminuir la Barra Estabilizadora Delantera de ${currentArb} a ${recommendedArb} (-3.5 puntos).`,
+      delta,
+      direction: 'DISMINUIR',
+      reason: 'Reducir la rigidez torsional lateral del eje delantero para aumentar el agarre relativo en el neumático exterior durante el apoyo.',
+      expectedEffect: 'Mayor inserción y menor tendencia a abrirse de trayectoria a mitad del giro.',
+      risk: 'Si se suaviza en exceso, la dirección puede perder inmediatez de respuesta.',
+      priority: 'Balance',
+      retestInstruction: 'Realizar una tanda de prueba de 2 a 3 vueltas completas antes de alterar muelles o alineación.',
+      // Retrocompatibilidad
+      explanation: 'Reducir la rigidez torsional delantera para permitir mayor transferencia de carga al neumático exterior.',
+      actionInstruction: `Disminuir Barra Delantera de ${currentArb} a ${recommendedArb} (${delta} puntos).`,
       priorityCategory: 'Balance',
     };
 
     results.push({
-      symptomAnalyzed: 'Subviraje en mitad de curva (Mid-Corner Understeer)',
+      symptomAnalyzed: 'Subviraje a mitad de curva (Mid-Corner Understeer)',
       zone: 'MITAD DE CURVA',
       possibleCauses: causes,
       primaryIntervention,
-      nextStepWarning: 'Realiza otra prueba de 2-3 vueltas antes de aplicar otra modificación en muelles o alineación.',
+      nextStepWarning: 'Evaluar el comportamiento en 2 vueltas limpias antes de tocar un segundo parámetro.',
     });
   }
 
@@ -88,30 +103,32 @@ export function diagnoseTestSession(
         component: 'Barra estabilizadora trasera (ARB)',
         parameterKey: 'arb_rear',
         probability: 88,
-        rationale: 'La barra trasera es excesivamente rígida en comparación con la delantera, forzando a la zaga a perder adherencia primero.',
+        rationale: 'La barra trasera presenta rigidez desproporcionada respecto a la delantera, induciendo saturación prematura de agarre lateral en la zaga.',
       },
       {
         component: 'Camber trasero descalibrado',
         parameterKey: 'camber_rear',
         probability: 72,
-        rationale: 'El neumático trasero pierde contacto plano cuando el vehículo asienta el apoyo en curvón.',
+        rationale: 'El neumático posterior no apoya con suficiente caída negativa para contrarrestar el balanceo del chasis.',
       },
       {
         component: 'Aerodinámica trasera insuficiente',
         parameterKey: 'aero_rear',
         probability: 65,
-        rationale: 'Falta de downforce en alerón posterior para anclar el eje en curvas rápidas.',
+        rationale: 'En curvas rápidas, la falta de carga vertical en el alerón suelta el tren posterior.',
       },
       {
         component: 'Presión trasera sobre-inflada',
         parameterKey: 'tire_pressure_rear',
         probability: 45,
-        rationale: 'Menor huella de contacto en el eje posterior.',
+        rationale: 'Parche de contacto posterior estrecho y propenso a deslizar.',
       },
     ];
 
     const currentArb = params.arb_rear?.value ?? 35.0;
-    const recommendedArb = Math.max(params.arb_rear?.min ?? 1.0, Number((currentArb - 4.0).toFixed(1)));
+    const minArb = params.arb_rear?.min ?? 1.0;
+    const recommendedArb = Math.max(minArb, Number((currentArb - 3.5).toFixed(1)));
+    const delta = Number((recommendedArb - currentArb).toFixed(1));
 
     const primaryIntervention: PrimaryIntervention = {
       parameterKey: 'arb_rear',
@@ -119,64 +136,106 @@ export function diagnoseTestSession(
       currentValue: currentArb,
       recommendedValue: recommendedArb,
       unit: '1.0 - 65.0',
-      delta: Number((recommendedArb - currentArb).toFixed(1)),
-      explanation: 'Suavizar la barra trasera para que el tren posterior absorba apoyo lateral y no rompa adherencia en el vértice.',
-      actionInstruction: `Reducir la Barra Estabilizadora Trasera de ${currentArb} a ${recommendedArb} (-4.0 puntos).`,
+      delta,
+      direction: 'DISMINUIR',
+      reason: 'Suavizar la barra trasera para que el tren posterior conserve mayor adherencia lateral durante el apoyo máximo.',
+      expectedEffect: 'Tren trasero más asentado y dócil en apoyos prolongados.',
+      risk: 'Una reducción excesiva puede restar agilidad de giro en curvas lentas.',
+      priority: 'Balance',
+      retestInstruction: 'Comprobar estabilidad en curvones medios antes de ajustar muelles traseros.',
+      explanation: 'Suavizar la barra trasera para asentar el eje posterior y evitar deslizamiento en el vértice.',
+      actionInstruction: `Reducir Barra Trasera de ${currentArb} a ${recommendedArb} (${delta} puntos).`,
       priorityCategory: 'Balance',
     };
 
     results.push({
-      symptomAnalyzed: 'Sobreviraje en mitad de curva (Snap / Mid-Corner Oversteer)',
+      symptomAnalyzed: 'Sobreviraje a mitad de curva (Snap / Mid-Corner Oversteer)',
       zone: 'MITAD DE CURVA',
       possibleCauses: causes,
       primaryIntervention,
-      nextStepWarning: 'Realiza otra prueba antes de aplicar otra modificación.',
+      nextStepWarning: 'Realizar prueba de 2 vueltas verificando que la cola no amague derrape en apoyo.',
     });
   }
 
   // 2. Diagnóstico de Entrada (Corner Entry)
   if (symptoms.cornerEntry === 'Subviraje') {
+    const isAwdOrFwd = drivetrain === 'AWD' || drivetrain === 'FWD';
     const currentDecel = params.diff_front_decel?.value ?? 5;
+
     const causes: DiagnosisCause[] = [
       {
-        component: 'Diferencial delantero en deceleración',
-        parameterKey: 'diff_front_decel',
-        probability: 85,
-        rationale: 'El bloqueo de deceleración del diferencial delantero fuerza a ambas ruedas a rodar a la misma velocidad al soltar gas, impidiendo el giro.',
-      },
-      {
-        component: 'Toe delantero (Convergencia)',
-        parameterKey: 'toe_front',
-        probability: 70,
-        rationale: 'Falta de divergencia leve (Toe Out) que impulse la inserción en el primer movimiento de volante.',
+        component: isAwdOrFwd ? 'Diferencial delantero en deceleración' : 'Alineación delantera (Toe)',
+        parameterKey: isAwdOrFwd ? 'diff_front_decel' : 'toe_front',
+        probability: isAwdOrFwd ? 85 : 78,
+        rationale: isAwdOrFwd
+          ? 'El bloqueo del diferencial delantero al decelerar fuerza a ambas ruedas a girar a velocidad similar, oponiéndose al giro de entrada.'
+          : 'Falta de divergencia leve en el tren delantero para favorecer la respuesta inicial al mover el volante.',
       },
       {
         component: 'Reparto de frenada delantero excesivo',
         parameterKey: 'brake_balance',
+        probability: 70,
+        rationale: 'Frenar con exceso de presión frontal satura la capacidad direccional de los neumáticos delanteros.',
+      },
+      {
+        component: 'Toe delantero (Convergencia)',
+        parameterKey: 'toe_front',
         probability: 65,
-        rationale: 'Frenar bloqueando parcialmente la tracción delantera priva a la rueda de capacidad direccional.',
+        rationale: 'Convergencia positiva estabiliza la recta pero ralentiza la inserción al vértice.',
       },
     ];
 
-    const recommendedDecel = Math.max(0, currentDecel - 5);
-    const primaryIntervention: PrimaryIntervention = {
-      parameterKey: 'diff_front_decel',
-      parameterName: 'Diferencial Delantero Deceleración',
-      currentValue: currentDecel,
-      recommendedValue: recommendedDecel,
-      unit: '%',
-      delta: recommendedDecel - currentDecel,
-      explanation: 'Liberar el diferencial delantero en deceleración para que la rueda interior ruede libre en la inserción.',
-      actionInstruction: `Bajar Diferencial Delantero Decel a ${recommendedDecel}%.`,
-      priorityCategory: 'Diferencial',
-    };
+    let primaryIntervention: PrimaryIntervention;
+
+    if (isAwdOrFwd && params.diff_front_decel?.available) {
+      const recommendedDecel = Math.max(0, currentDecel - 5);
+      const delta = recommendedDecel - currentDecel;
+      primaryIntervention = {
+        parameterKey: 'diff_front_decel',
+        parameterName: 'Diferencial Delantero Deceleración',
+        currentValue: currentDecel,
+        recommendedValue: recommendedDecel,
+        unit: '%',
+        delta,
+        direction: delta < 0 ? 'DISMINUIR' : 'MANTENER',
+        reason: 'Liberar el diferencial delantero al desacelerar para que la rueda interior gire con mayor libertad en la entrada.',
+        expectedEffect: 'El morro entra con mayor facilidad al soltar el pedal del freno o gas.',
+        risk: 'Valores muy bajos pueden provocar leve inestabilidad en frenadas sobre asfalto irregular.',
+        priority: 'Diferencial',
+        retestInstruction: 'Observar si el coche apunta al ápice con menor esfuerzo en el volante.',
+        explanation: 'Reducir el bloqueo de deceleración delantero para facilitar el giro de inserción.',
+        actionInstruction: `Ajustar Diferencial Delantero Decel a ${recommendedDecel}%.`,
+        priorityCategory: 'Diferencial',
+      };
+    } else {
+      const currentToe = params.toe_front?.value ?? 0.0;
+      const recommendedToe = Number((currentToe - 0.1).toFixed(1));
+      const delta = Number((recommendedToe - currentToe).toFixed(1));
+      primaryIntervention = {
+        parameterKey: 'toe_front',
+        parameterName: 'Toe Delantero (Convergencia)',
+        currentValue: currentToe,
+        recommendedValue: recommendedToe,
+        unit: '°',
+        delta,
+        direction: 'DISMINUIR',
+        reason: 'Aplicar ligera divergencia (-0.1°) para dinamizar la respuesta inicial del eje directriz.',
+        expectedEffect: 'Entrada más reactiva al primer toque de volante.',
+        risk: 'Exceso de divergencia puede generar ligereza en recta a velocidades superiores a 200 km/h.',
+        priority: 'Balance',
+        retestInstruction: 'Evaluar la estabilidad en recta antes y después del ajuste.',
+        explanation: 'Aplicar leve divergencia delantera para respuesta ágil.',
+        actionInstruction: `Modificar Toe Delantero a ${recommendedToe}°.`,
+        priorityCategory: 'Balance',
+      };
+    }
 
     results.push({
       symptomAnalyzed: 'Subviraje en entrada de curva (Entry Understeer)',
       zone: 'ENTRADA',
       possibleCauses: causes,
       primaryIntervention,
-      nextStepWarning: 'Realiza otra prueba antes de aplicar otra modificación.',
+      nextStepWarning: 'Comprobar en la primera curva tras recta si la inserción es limpia.',
     });
   }
 
@@ -184,120 +243,173 @@ export function diagnoseTestSession(
     const currentDecel = params.diff_rear_decel?.value ?? 20;
     const causes: DiagnosisCause[] = [
       {
-        component: 'Diferencial trasero en deceleración abierto',
+        component: 'Diferencial trasero en deceleración bajo',
         parameterKey: 'diff_rear_decel',
         probability: 82,
-        rationale: 'Al soltar gas en entrada a curva, la rueda trasera interior gira sin freno y la cola rota descontrolada (lift-off oversteer).',
+        rationale: 'Al soltar el acelerador en entrada, la zaga queda excesivamente libre y la inercia provoca sobreviraje por descompresión.',
       },
       {
         component: 'Extensión trasera (Rebound) blanda',
         parameterKey: 'rebound_rear',
         probability: 75,
-        rationale: 'La suspensión trasera se estira demasiado rápido en frenada, descargando los neumáticos traseros.',
+        rationale: 'Los amortiguadores traseros se extienden con excesiva rapidez en frenada descargando el eje posterior.',
       },
       {
-        component: 'Balance de frenos atrasado',
+        component: 'Reparto de frenos con sesgo hacia atrás',
         parameterKey: 'brake_balance',
-        probability: 60,
-        rationale: 'Fuerza de frenado sobrepasando la adherencia trasera.',
+        probability: 68,
+        rationale: 'Fuerza excesiva en frenos traseros induce pérdida de agarre en el eje posterior al desacelerar.',
       },
     ];
 
-    const recommendedDecel = Math.min(60, currentDecel + 8);
+    const recommendedDecel = Math.min(65, currentDecel + 6);
+    const delta = recommendedDecel - currentDecel;
+
     const primaryIntervention: PrimaryIntervention = {
       parameterKey: 'diff_rear_decel',
       parameterName: 'Diferencial Trasero Deceleración',
       currentValue: currentDecel,
       recommendedValue: recommendedDecel,
       unit: '%',
-      delta: 8,
-      explanation: 'Incrementar el bloqueo de deceleración trasero para amarrar la zaga cuando levantas el pie del gas en el turn-in.',
-      actionInstruction: `Aumentar Diferencial Trasero Decel de ${currentDecel}% a ${recommendedDecel}% (+8%).`,
+      delta,
+      direction: 'AUMENTAR',
+      reason: 'Aumentar el bloqueo de deceleración trasero para calmar la zaga al levantar el acelerador o bajar marchas.',
+      expectedEffect: 'Mayor estabilidad y compostura en el tren posterior durante el turn-in.',
+      risk: 'Un valor excesivo puede inducir subviraje en la fase inicial del giro.',
+      priority: 'Diferencial',
+      retestInstruction: 'Dar 2 vueltas evaluando si la cola permanece estable al soltar el gas en frenada.',
+      explanation: 'Aumentar el bloqueo de deceleración trasero para fijar la trayectoria.',
+      actionInstruction: `Subir Diferencial Trasero Decel de ${currentDecel}% a ${recommendedDecel}% (+${delta}%).`,
       priorityCategory: 'Diferencial',
     };
 
     results.push({
-      symptomAnalyzed: 'Zaga nerviosa / Sobreviraje en entrada (Lift-off Oversteer)',
+      symptomAnalyzed: 'Zaga inestable / Sobreviraje en entrada (Lift-off Oversteer)',
       zone: 'ENTRADA',
       possibleCauses: causes,
       primaryIntervention,
-      nextStepWarning: 'Realiza otra prueba antes de aplicar otra modificación.',
+      nextStepWarning: 'Comprobar que el coche no presente subviraje como efecto secundario.',
     });
   }
 
   // 3. Diagnóstico de Salida de Curva (Corner Exit)
   if (symptoms.cornerExit === 'Subviraje') {
-    const currentCenter = params.diff_center_balance?.value ?? 65;
+    const isAwd = drivetrain === 'AWD';
+    const currentCenter = params.diff_center_balance?.value ?? 68;
+
     const causes: DiagnosisCause[] = [
       {
-        component: 'Reparto central AWD muy frontal o diferencial del. aceleración alto',
-        parameterKey: 'diff_center_balance',
+        component: isAwd ? 'Reparto central AWD con exceso de par delantero' : 'Diferencial trasero / muelles',
+        parameterKey: isAwd ? 'diff_center_balance' : 'diff_rear_accel',
         probability: 85,
-        rationale: 'La tracción delantera tira con exceso de fuerza al pisar a fondo en el ápice, empujando la trompa hacia la escapatoria.',
+        rationale: isAwd
+          ? 'El eje delantero tracciona con demasiado par al abrir gas, provocando que los neumáticos directrices patinen y abran la trayectoria.'
+          : 'El diferencial delantero o diferencial abierto limita la rotación acelerada hacia la salida.',
       },
       {
-        component: 'Diferencial delantero aceleración alto',
+        component: 'Diferencial delantero aceleración elevado',
         parameterKey: 'diff_front_accel',
-        probability: 80,
-        rationale: 'Ambas ruedas delanteras se traban juntas al acelerar impidiendo el radio de giro.',
+        probability: 78,
+        rationale: 'Ambas ruedas delanteras giran a la misma velocidad bajo carga impidiendo cerrar el radio de curva.',
       },
     ];
 
-    const recommendedCenter = Math.min(80, currentCenter + 6);
-    const primaryIntervention: PrimaryIntervention = {
-      parameterKey: 'diff_center_balance',
-      parameterName: 'Reparto Central AWD (% Trasero)',
-      currentValue: currentCenter,
-      recommendedValue: recommendedCenter,
-      unit: '%',
-      delta: 6,
-      explanation: 'Enviar más potencia al eje trasero para inducir una leve rotación bajo gas y liberar al eje delantero para dirigir.',
-      actionInstruction: `Aumentar Reparto Central Trasero de ${currentCenter}% a ${recommendedCenter}% (+6% atrás).`,
-      priorityCategory: 'Diferencial',
-    };
+    let primaryIntervention: PrimaryIntervention;
+
+    if (isAwd && params.diff_center_balance?.available) {
+      const recommendedCenter = Math.min(80, currentCenter + 5);
+      const delta = recommendedCenter - currentCenter;
+      primaryIntervention = {
+        parameterKey: 'diff_center_balance',
+        parameterName: 'Reparto Central AWD (% Trasero)',
+        currentValue: currentCenter,
+        recommendedValue: recommendedCenter,
+        unit: '%',
+        delta,
+        direction: 'AUMENTAR',
+        reason: 'Enviar mayor proporción de potencia al eje trasero para inducir una leve rotación con el acelerador y liberar tracción en el eje directriz.',
+        expectedEffect: 'El auto cierra la curva al pisar gas en lugar de empujar hacia afuera.',
+        risk: 'Si el motor tiene alta potencia, puede provocar sobreviraje de potencia si se sube en exceso.',
+        priority: 'Diferencial',
+        retestInstruction: 'Acelerar a fondo en el vértice y verificar si la trayectoria se mantiene.',
+        explanation: 'Aumentar el reparto de potencia hacia el eje posterior.',
+        actionInstruction: `Aumentar Reparto Central a ${recommendedCenter}% trasero (+${delta}%).`,
+        priorityCategory: 'Diferencial',
+      };
+    } else {
+      const currentFrontArb = params.arb_front?.value ?? 25.0;
+      const minArb = params.arb_front?.min ?? 1.0;
+      const recommended = Math.max(minArb, Number((currentFrontArb - 2.5).toFixed(1)));
+      const delta = Number((recommended - currentFrontArb).toFixed(1));
+      primaryIntervention = {
+        parameterKey: 'arb_front',
+        parameterName: 'Barra Estabilizadora Delantera',
+        currentValue: currentFrontArb,
+        recommendedValue: recommended,
+        unit: '1.0 - 65.0',
+        delta,
+        direction: 'DISMINUIR',
+        reason: 'Reducir la barra delantera para incrementar el agarre mecánico del morro al traccionar.',
+        expectedEffect: 'Mayor guiado direccional al acelerar en la salida.',
+        risk: 'Leve aumento del balanceo del chasis.',
+        priority: 'Balance',
+        retestInstruction: 'Verificar la trayectoria en curva media de aceleración.',
+        explanation: 'Suavizar barra delantera para ganar agarre direccional.',
+        actionInstruction: `Reducir Barra Delantera a ${recommended}.`,
+        priorityCategory: 'Balance',
+      };
+    }
 
     results.push({
-      symptomAnalyzed: 'Subviraje en salida con gas a fondo (Power Understeer)',
+      symptomAnalyzed: 'Subviraje en aceleración de salida (Power Understeer)',
       zone: 'SALIDA',
       possibleCauses: causes,
       primaryIntervention,
-      nextStepWarning: 'Realiza otra prueba antes de aplicar otra modificación.',
+      nextStepWarning: 'Verificar en curvas de segunda y tercera marcha.',
     });
   }
 
   if (symptoms.cornerExit === 'Power oversteer' || symptoms.cornerExit === 'Sobreviraje') {
-    const currentRearAccel = params.diff_rear_accel?.value ?? 75;
+    const currentRearAccel = params.diff_rear_accel?.value ?? 65;
     const causes: DiagnosisCause[] = [
       {
-        component: 'Diferencial trasero de aceleración muy agresivo',
+        component: 'Diferencial trasero de aceleración agresivo',
         parameterKey: 'diff_rear_accel',
         probability: 92,
-        rationale: 'El diferencial bloquea instantáneamente ambas ruedas traseras en aceleración, rompiendo la tracción lateral en derrape no deseado.',
+        rationale: 'El diferencial bloquea de forma rígida ambas ruedas traseras al acelerar, rompiendo la adherencia lateral en derrape imprevisto.',
       },
       {
-        component: 'Barra trasera demasiado rígida',
+        component: 'Barra estabilizadora trasera rígida',
         parameterKey: 'arb_rear',
         probability: 70,
-        rationale: 'No permite que la rueda exterior trasera tome carga sin deslizar.',
+        rationale: 'No permite que el neumático trasero exterior absorba la carga de aceleración sin deslizar.',
       },
       {
-        component: 'Presión trasera excesiva',
+        component: 'Presión de neumático trasero elevada',
         parameterKey: 'tire_pressure_rear',
-        probability: 55,
-        rationale: 'Sobrecalentamiento y menor parche longitudinal.',
+        probability: 52,
+        rationale: 'Reduce la huella de tracción longitudinal y sobrecalienta el centro de la banda de rodadura.',
       },
     ];
 
-    const recommendedRearAccel = Math.max(35, currentRearAccel - 12);
+    const recommendedRearAccel = Math.max(30, currentRearAccel - 10);
+    const delta = recommendedRearAccel - currentRearAccel;
+
     const primaryIntervention: PrimaryIntervention = {
       parameterKey: 'diff_rear_accel',
       parameterName: 'Diferencial Trasero Aceleración',
       currentValue: currentRearAccel,
       recommendedValue: recommendedRearAccel,
       unit: '%',
-      delta: -12,
-      explanation: 'Permitir que la rueda exterior gire con más libertad al acelerar para dosificar la tracción y evitar trompo súbito.',
-      actionInstruction: `Reducir Diferencial Trasero Aceleración de ${currentRearAccel}% a ${recommendedRearAccel}% (-12%).`,
+      delta,
+      direction: 'DISMINUIR',
+      reason: 'Permitir que la rueda exterior trasera rote con mayor libertad al acelerar en apoyo, evitando derrapes súbitos.',
+      expectedEffect: 'Tracción dócil y predecible al abrir gas en el ápice.',
+      risk: 'Una reducción excesiva puede causar patinamiento en la rueda interior en curvas muy lentas.',
+      priority: 'Diferencial',
+      retestInstruction: 'Abrir gas progresivamente en salida y medir la estabilidad de la zaga.',
+      explanation: 'Reducir el porcentaje de bloqueo trasero en aceleración.',
+      actionInstruction: `Reducir Diferencial Trasero Aceleración de ${currentRearAccel}% a ${recommendedRearAccel}% (${delta}%).`,
       priorityCategory: 'Diferencial',
     };
 
@@ -306,7 +418,7 @@ export function diagnoseTestSession(
       zone: 'SALIDA',
       possibleCauses: causes,
       primaryIntervention,
-      nextStepWarning: 'Realiza otra prueba antes de aplicar otra modificación.',
+      nextStepWarning: 'Realizar 2 vueltas comprobando la tracción al salir de curvas lentas y medias.',
     });
   }
 
@@ -318,26 +430,34 @@ export function diagnoseTestSession(
         component: 'Balance de frenada con excesivo sesgo delantero',
         parameterKey: 'brake_balance',
         probability: 88,
-        rationale: 'Las pinzas delanteras acaparan la frenada bloqueando la dirección o saturando el agarre antes del giro.',
+        rationale: 'Las pinzas delanteras saturan la adherencia del neumático impidiendo que mantenga capacidad de guiado durante la deceleración.',
       },
       {
-        component: 'Presión de frenado al 100% sin ABS',
+        component: 'Presión de frenado elevada sin ABS',
         parameterKey: 'brake_pressure',
         probability: 65,
-        rationale: 'Bloqueo neumático inmediato en el tren delantero.',
+        rationale: 'Bloqueo temprano de ruedas delanteras que anula el control direccional.',
       },
     ];
 
-    const recommendedBalance = Math.max(48.0, Number((currentBalance - 2.0).toFixed(1)));
+    const recommendedBalance = Math.max(48.0, Number((currentBalance - 1.5).toFixed(1)));
+    const delta = Number((recommendedBalance - currentBalance).toFixed(1));
+
     const primaryIntervention: PrimaryIntervention = {
       parameterKey: 'brake_balance',
       parameterName: 'Balance de Frenada',
       currentValue: currentBalance,
       recommendedValue: recommendedBalance,
       unit: '%',
-      delta: Number((recommendedBalance - currentBalance).toFixed(1)),
-      explanation: 'Equilibrar el reparto de frenada hacia atrás para permitir que las ruedas delanteras mantengan capacidad direccional.',
-      actionInstruction: `Reducir Balance de Frenada Delantero de ${currentBalance}% a ${recommendedBalance}%.`,
+      delta,
+      direction: 'DISMINUIR',
+      reason: 'Mover el balance ligeramente hacia atrás para reducir la sobrecarga en el eje directriz y conservar capacidad de giro.',
+      expectedEffect: 'Capacidad de realizar trail-braking sin que el vehículo se niegue a girar.',
+      risk: 'Si se traslada demasiado hacia atrás, la zaga puede desestabilizarse en frenadas a alta velocidad.',
+      priority: 'Seguridad',
+      retestInstruction: 'Efectuar 3 frenadas al final de la recta principal evaluando el comportamiento direccional.',
+      explanation: 'Desplazar el reparto de frenada hacia el eje trasero.',
+      actionInstruction: `Ajustar Balance de Frenada Delantero de ${currentBalance}% a ${recommendedBalance}%.`,
       priorityCategory: 'Seguridad',
     };
 
@@ -346,7 +466,54 @@ export function diagnoseTestSession(
       zone: 'FRENADA',
       possibleCauses: causes,
       primaryIntervention,
-      nextStepWarning: 'Realiza otra prueba antes de aplicar otra modificación.',
+      nextStepWarning: 'Asegurar que la zaga no amague descolocarse en frenadas en línea recta.',
+    });
+  }
+
+  if (symptoms.braking === 'Se mueve de atrás' || symptoms.braking === 'Inestable') {
+    const currentBalance = params.brake_balance?.value ?? 50.0;
+    const causes: DiagnosisCause[] = [
+      {
+        component: 'Balance de frenada con excesiva carga trasera',
+        parameterKey: 'brake_balance',
+        probability: 86,
+        rationale: 'Los frenos traseros bloquean o saturan antes que los delanteros, provocando conato de trompo en frenada recta.',
+      },
+      {
+        component: 'Extensión trasera (Rebound) blanda',
+        parameterKey: 'rebound_rear',
+        probability: 72,
+        rationale: 'La carrocería cabecea hacia adelante con rapidez, descargando peso del eje trasero.',
+      },
+    ];
+
+    const recommendedBalance = Math.min(56.0, Number((currentBalance + 2.0).toFixed(1)));
+    const delta = Number((recommendedBalance - currentBalance).toFixed(1));
+
+    const primaryIntervention: PrimaryIntervention = {
+      parameterKey: 'brake_balance',
+      parameterName: 'Balance de Frenada',
+      currentValue: currentBalance,
+      recommendedValue: recommendedBalance,
+      unit: '%',
+      delta,
+      direction: 'AUMENTAR',
+      reason: 'Aumentar la carga de frenada en el eje delantero para garantizar que las ruedas delanteras frenen antes que las traseras.',
+      expectedEffect: 'Frenada en línea recta completamente estable y predecible.',
+      risk: 'Un sesgo excesivo hacia el frente puede dificultar el giro frenando.',
+      priority: 'Seguridad',
+      retestInstruction: 'Frenar fuertemente en recta desde 200 km/h y verificar que la zaga se mantenga alineada.',
+      explanation: 'Aumentar el reparto delantero de frenos.',
+      actionInstruction: `Subir Balance de Frenada Delantero a ${recommendedBalance}%.`,
+      priorityCategory: 'Seguridad',
+    };
+
+    results.push({
+      symptomAnalyzed: 'Inestabilidad de la zaga en frenada fuerte',
+      zone: 'FRENADA',
+      possibleCauses: causes,
+      primaryIntervention,
+      nextStepWarning: 'Verificar la estabilidad antes de tocar amortiguación trasera.',
     });
   }
 
@@ -355,35 +522,43 @@ export function diagnoseTestSession(
     const currentRebound = params.rebound_front?.value ?? 10.5;
     const causes: DiagnosisCause[] = [
       {
-        component: 'Amortiguadores: Extensión (Rebound) desfasada o rígida',
+        component: 'Amortiguadores: Extensión (Rebound) rígida',
         parameterKey: 'rebound_front',
         probability: 85,
-        rationale: 'La suspensión no deja estirar el muelle a tiempo, empaquetando la carrocería en ondulaciones sucesivas.',
+        rationale: 'La suspensión no permite que el muelle se expanda a tiempo, acumulando compresión y provocando que el neumático despegue del asfalto.',
       },
       {
-        component: 'Muelles delanteros excesivamente duros',
+        component: 'Muelles delanteros con rigidez excesiva',
         parameterKey: 'springs_front',
-        probability: 75,
-        rationale: 'La frecuencia natural de oscilación es demasiado alta para las irregularidades del trazado.',
+        probability: 74,
+        rationale: 'Frecuencia de oscilación muy rígida para las irregularidades de la pista.',
       },
       {
-        component: 'Compresión (Bump) excesiva',
+        component: 'Compresión (Bump) alta',
         parameterKey: 'bump_front',
         probability: 60,
-        rationale: 'El amortiguador no absorbe el golpe inicial del bache.',
+        rationale: 'El amortiguador transmite el impacto inicial del bache directamente al chasis.',
       },
     ];
 
-    const recommendedRebound = Math.max(3.0, Number((currentRebound - 1.5).toFixed(1)));
+    const recommendedRebound = Math.max(2.0, Number((currentRebound - 1.2).toFixed(1)));
+    const delta = Number((recommendedRebound - currentRebound).toFixed(1));
+
     const primaryIntervention: PrimaryIntervention = {
       parameterKey: 'rebound_front',
       parameterName: 'Extensión Delantera (Rebound)',
       currentValue: currentRebound,
       recommendedValue: recommendedRebound,
       unit: '1.0 - 20.0',
-      delta: Number((recommendedRebound - currentRebound).toFixed(1)),
-      explanation: 'Suavizar la extensión para que la rueda recupere contacto inmediato con el piso tras superar la ondulación.',
-      actionInstruction: `Bajar Extensión Delantera de ${currentRebound} a ${recommendedRebound} (-1.5 puntos).`,
+      delta,
+      direction: 'DISMINUIR',
+      reason: 'Suavizar la extensión para que la rueda recupere contacto continuo con la superficie tras superar ondulaciones.',
+      expectedEffect: 'Chasis más asentado sobre pianos y asfalto roto.',
+      risk: 'Una reducción desmedida puede provocar oscilaciones continuas del morro.',
+      priority: 'Suspensión',
+      retestInstruction: 'Rodar sobre una sección de asfalto irregular o bordillo interior.',
+      explanation: 'Suavizar amortiguación de extensión delantera.',
+      actionInstruction: `Reducir Extensión Delantera de ${currentRebound} a ${recommendedRebound} (${delta} puntos).`,
       priorityCategory: 'Suspensión',
     };
 
@@ -392,7 +567,7 @@ export function diagnoseTestSession(
       zone: 'SUSPENSIÓN',
       possibleCauses: causes,
       primaryIntervention,
-      nextStepWarning: 'Realiza otra prueba antes de aplicar otra modificación.',
+      nextStepWarning: 'Comprobar absorción sin comprometer el control de cabeceo.',
     });
   }
 
@@ -400,29 +575,37 @@ export function diagnoseTestSession(
     const currentHeight = params.ride_height_front?.value ?? 8.0;
     const causes: DiagnosisCause[] = [
       {
-        component: 'Altura de carrocería excesivamente baja',
+        component: 'Altura de carrocería baja',
         parameterKey: 'ride_height_front',
         probability: 90,
-        rationale: 'El recorrido útil de los amortiguadores se agota y los brazos de suspensión golpean los topes de goma mecánicos.',
+        rationale: 'El recorrido libre de suspensión se agota ante compresiones fuertes, golpeando topes mecánicos o rozando el suelo.',
       },
       {
-        component: 'Muelles demasiado blandos',
+        component: 'Muelles con rigidez insuficiente',
         parameterKey: 'springs_front',
-        probability: 70,
-        rationale: 'No soportan la carga cinética en compresiones de saltos o apoyos en rasante.',
+        probability: 72,
+        rationale: 'Los muelles no sostienen la carga cinética en compresiones profundas.',
       },
     ];
 
-    const recommendedHeight = Number((currentHeight + 1.0).toFixed(1));
+    const recommendedHeight = Number((currentHeight + 0.8).toFixed(1));
+    const delta = Number((recommendedHeight - currentHeight).toFixed(1));
+
     const primaryIntervention: PrimaryIntervention = {
       parameterKey: 'ride_height_front',
       parameterName: 'Altura Delantera',
       currentValue: currentHeight,
       recommendedValue: recommendedHeight,
       unit: 'cm',
-      delta: 1.0,
-      explanation: 'Elevar la altura delantera para recuperar recorrido libre de compresión y evitar colisión de bajos.',
-      actionInstruction: `Subir Altura Delantera de ${currentHeight} cm a ${recommendedHeight} cm (+1.0 cm).`,
+      delta,
+      direction: 'AUMENTAR',
+      reason: 'Elevar ligeramente la altura para restablecer recorrido de compresión útil y prevenir impacto contra el suelo.',
+      expectedEffect: 'Eliminación del golpe de chasis en compresiones fuertes.',
+      risk: 'Elevar la altura incrementa ligeramente la altura del centro de gravedad.',
+      priority: 'Suspensión',
+      retestInstruction: 'Pasar por la zona de compresión máxima donde ocurría el fondo.',
+      explanation: 'Subir altura de suspensión delantera.',
+      actionInstruction: `Subir Altura Delantera a ${recommendedHeight} cm (+${delta} cm).`,
       priorityCategory: 'Suspensión',
     };
 
@@ -431,21 +614,21 @@ export function diagnoseTestSession(
       zone: 'SUSPENSIÓN',
       possibleCauses: causes,
       primaryIntervention,
-      nextStepWarning: 'Realiza otra prueba antes de aplicar otra modificación.',
+      nextStepWarning: 'Coordinar con la altura trasera si el rake se ve alterado.',
     });
   }
 
-  // Si no se encontraron síntomas o todo está estable
+  // 6. Si no hay síntomas reportados o el comportamiento es estable
   if (results.length === 0) {
     results.push({
-      symptomAnalyzed: 'Telemetría y comportamiento nominal / Estable',
+      symptomAnalyzed: 'Comportamiento en equilibrio / Sin discrepancias críticas',
       zone: 'GLOBAL',
       possibleCauses: [
         {
-          component: 'Comportamiento en equilibrio',
+          component: 'Chasis en equilibrio',
           parameterKey: 'arb_front',
-          probability: 99,
-          rationale: 'El chasis responde a las exigencias dinámicas sin síntomas críticos reportados.',
+          probability: 98,
+          rationale: 'Los parámetros actuales operan dentro de los márgenes previstos para la disciplina seleccionada.',
         },
       ],
       primaryIntervention: {
@@ -455,11 +638,17 @@ export function diagnoseTestSession(
         recommendedValue: 0,
         unit: '',
         delta: 0,
-        explanation: 'No se detectan discrepancias dinámicas críticas en los sectores analizados.',
-        actionInstruction: 'Continuar rodando para acumular datos de tiempos de vuelta y degradación térmica.',
+        direction: 'MANTENER',
+        reason: 'No se observan anomalías cinemáticas que justifiquen alterar el equilibrio alcanzado.',
+        expectedEffect: 'Continuidad de sensaciones y consistencia en tiempos de vuelta.',
+        risk: 'Modificar parámetros sin un síntoma claro descalibra el balance base.',
+        priority: 'Balance',
+        retestInstruction: 'Completar tandas de 3 a 5 vueltas para evaluar consistencia y degradación.',
+        explanation: 'Continuar rodando para acumular referencias cronometradas.',
+        actionInstruction: 'Mantener parámetros actuales.',
         priorityCategory: 'Balance',
       },
-      nextStepWarning: 'Realiza otra prueba antes de aplicar otra modificación.',
+      nextStepWarning: 'Registrar nuevos síntomas cuando se presenten en situaciones específicas de pista.',
     });
   }
 
