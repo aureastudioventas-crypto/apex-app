@@ -1,4 +1,4 @@
-import { ParameterUnit } from '../types';
+export type ParameterUnit = 'bar' | 'degree' | 'percent' | 'kgf_mm' | 'kgf' | 'cm' | 'inch' | 'ratio' | 'kmh' | 'km' | 'none';
 
 export interface ParameterUnitDefinition {
   unit: ParameterUnit;
@@ -29,8 +29,7 @@ export const BAR_TO_PSI = 14.5037738;
 
 export function normalizeUnit(unit: string): ParameterUnit {
   const normalized = unit.trim().toLowerCase();
-  if (normalized === 'psi') return 'bar';
-  if (normalized === 'bar') return 'bar';
+  if (normalized === 'psi' || normalized === 'bar') return 'bar';
   if (normalized === '%' || normalized === 'percent' || normalized === 'percentage') return 'percent';
   if (normalized === '°' || normalized === 'deg' || normalized === 'degree') return 'degree';
   if (normalized === 'kgf/mm' || normalized === 'kgf_mm') return 'kgf_mm';
