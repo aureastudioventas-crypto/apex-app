@@ -4,14 +4,20 @@
  */
 
 import React, { useState } from 'react';
-import { Search, Shield, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Shield, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 import { MASTER_MATRIX } from '../engine/matrixKnowledge';
 import { MASTER_37_SHEETS } from '../data/master37Sheets';
+import { Vehicle } from '../types';
 
-export const MatrixPage: React.FC = () => {
+interface MatrixPageProps {
+  activeVehicle?: Vehicle | null;
+  onAssignCategory?: (categoryId: string) => void;
+}
+
+export const MatrixPage: React.FC<MatrixPageProps> = ({ activeVehicle, onAssignCategory }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedParameterCategory, setSelectedParameterCategory] = useState<string>('ALL');
-  const [selectedSheetId, setSelectedSheetId] = useState<string>('FH5-TM-001');
+  const [selectedSheetId, setSelectedSheetId] = useState<string>(activeVehicle?.categoryId || 'FH5-TM-001');
 
   const filteredItems = MASTER_MATRIX.filter((item) => {
     const q = searchTerm.toLowerCase();
@@ -21,6 +27,13 @@ export const MatrixPage: React.FC = () => {
   });
 
   const selectedSheet = MASTER_37_SHEETS.find((sheet) => sheet.id === selectedSheetId) || MASTER_37_SHEETS[0];
+  const assigned = activeVehicle?.categoryId === selectedSheet.id;
+
+  const handleSelectSheet = (id: string) => setSelectedSheetId(id);
+  const handleAssign = () => {
+    if (!onAssignCategory || !selectedSheet) return;
+    onAssignCategory(selectedSheet.id);
+  };
 
   return (
     <div className="space-y-6">
@@ -48,26 +61,32 @@ export const MatrixPage: React.FC = () => {
             <h3 className="text-lg font-bold text-white">HOJAS DE CATEGORÍA FH5-TM-001 → FH5-TM-037</h3>
             <p className="text-xs text-slate-400">Selecciona una categoría para consultar sus bases Rev. 4.0. Los porcentajes son posición dentro del rango FH5.</p>
           </div>
-          <select value={selectedSheetId} onChange={(e) => setSelectedSheetId(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200">
+          <select value={selectedSheetId} onChange={(e) => handleSelectSheet(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200">
             {MASTER_37_SHEETS.map((sheet) => <option key={sheet.id} value={sheet.id}>{sheet.id} — {sheet.name}</option>)}
           </select>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
           {MASTER_37_SHEETS.map((sheet) => (
-            <button key={sheet.id} onClick={() => setSelectedSheetId(sheet.id)} className={`text-left p-2.5 rounded-lg border font-mono text-[11px] transition-colors ${selectedSheet.id === sheet.id ? 'border-cyan-500 bg-cyan-950/40 text-cyan-300' : 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-600'}`}>
+            <button key={sheet.id} onClick={() => handleSelectSheet(sheet.id)} className={`text-left p-2.5 rounded-lg border font-mono text-[11px] transition-colors ${selectedSheet.id === sheet.id ? 'border-cyan-500 bg-cyan-950/40 text-cyan-300' : 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-600'}`}>
               <strong>{String(sheet.number).padStart(2, '0')}</strong> · {sheet.name}
             </button>
           ))}
         </div>
 
         <div className="bg-slate-950 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <div>
               <span className="text-cyan-400 font-mono text-xs font-bold">{selectedSheet.id}</span>
               <h4 className="text-xl font-bold text-white">{selectedSheet.name}</h4>
+              {activeVehicle && <p className="text-[11px] text-slate-500 mt-1">Vehículo activo: {activeVehicle.make} {activeVehicle.model} · categoría actual: {activeVehicle.categoryId || 'SIN ASIGNAR'}</p>}
             </div>
-            <span className="text-[10px] text-slate-500 font-mono">FUENTE: {selectedSheet.sourceVersion}</span>
+            {onAssignCategory && activeVehicle && (
+              <button onClick={handleAssign} className={`flex items-center gap-2 px-3 py-2 rounded-lg font-mono text-xs font-bold ${assigned ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'}`}>
+                <CheckCircle className="w-4 h-4" />
+                {assigned ? 'CATEGORÍA ASIGNADA' : 'ASIGNAR AL VEHÍCULO ACTIVO'}
+              </button>
+            )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 font-mono text-xs">
             <div className="p-3 rounded-lg border border-slate-800"><span className="text-slate-500 block">CASTER</span><strong className="text-slate-200">{selectedSheet.casterDeg}°</strong></div>
@@ -90,16 +109,7 @@ export const MatrixPage: React.FC = () => {
             <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Buscar parámetro, síntoma o comportamiento..." className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder:text-slate-500 font-mono" />
           </div>
           <select value={selectedParameterCategory} onChange={(e) => setSelectedParameterCategory(e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-300">
-            <option value="ALL">Todos los parámetros</option>
-            <option value="TIRES">Neumáticos</option>
-            <option value="ALIGNMENT">Alineación</option>
-            <option value="ARB">Barras estabilizadoras</option>
-            <option value="SPRINGS">Muelles y altura</option>
-            <option value="DAMPING">Amortiguación</option>
-            <option value="AERO">Aerodinámica</option>
-            <option value="BRAKES">Frenos</option>
-            <option value="DIFFERENTIAL">Diferenciales</option>
-            <option value="GEARING">Transmisión</option>
+            <option value="ALL">Todos los parámetros</option><option value="TIRES">Neumáticos</option><option value="ALIGNMENT">Alineación</option><option value="ARB">Barras estabilizadoras</option><option value="SPRINGS">Muelles y altura</option><option value="DAMPING">Amortiguación</option><option value="AERO">Aerodinámica</option><option value="BRAKES">Frenos</option><option value="DIFFERENTIAL">Diferenciales</option><option value="GEARING">Transmisión</option>
           </select>
         </div>
       </section>
