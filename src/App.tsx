@@ -37,9 +37,10 @@ export default function App() {
     let tunesUpdated = false;
 
     loadedVehicles.forEach((veh) => {
-      const compositeKey = `${veh.id}__${veh.currentDiscipline || 'ROAD RACING'}`;
+      const disc = veh.currentDiscipline || 'ROAD RACING';
+      const compositeKey = `${veh.id}__${disc}`;
       if (!updatedTunes[compositeKey]) {
-        const baseline = generateMaster37BaselineTune(veh, veh.currentDiscipline || 'ROAD RACING');
+        const baseline = generateMaster37BaselineTune(veh, disc);
         updatedTunes[compositeKey] = baseline;
         StorageService.saveTune(baseline);
         tunesUpdated = true;
@@ -59,7 +60,8 @@ export default function App() {
   }, [activeVehicleId]);
 
   const activeVehicle = vehicles.find((v) => v.id === activeVehicleId) || vehicles[0] || null;
-  const activeTune = activeVehicle ? tunes[`${activeVehicle.id}__${activeVehicle.currentDiscipline}`] || null : null;
+  const activeDiscipline = activeVehicle?.currentDiscipline || 'ROAD RACING';
+  const activeTune = activeVehicle ? tunes[`${activeVehicle.id}__${activeDiscipline}`] || tunes[activeVehicle.id] || null : null;
 
   const handleSelectVehicle = (id: string) => {
     setActiveVehicleId(id);
@@ -107,10 +109,22 @@ export default function App() {
 
   const handleSaveVehicle = (veh: Vehicle) => {
     StorageService.saveVehicle(veh);
-    setVehicles(StorageService.getVehicles());
+    const updatedVehicles = StorageService.getVehicles();
+    setVehicles(updatedVehicles);
     setActiveVehicleId(veh.id);
-    const compositeKey = `${veh.id}__${veh.currentDiscipline || 'ROAD RACING'}`;
-    if (!tunes[compositeKey]) handleUpdateTune(generateMaster37BaselineTune(veh, veh.currentDiscipline || 'ROAD RACING'));
+    const disc = veh.currentDiscipline || 'ROAD RACING';
+    const compositeKey = `${veh.id}__${disc}`;
+    if (!tunes[compositeKey]) handleUpdateTune(generateMaster37BaselineTune(veh, disc));
+  };
+
+  const handleAssignCategory = (categoryId: string) => {
+    if (!activeVehicle) return;
+    const updatedVehicle: Vehicle = { ...activeVehicle, categoryId, updatedAt: new Date().toISOString() };
+    StorageService.saveVehicle(updatedVehicle);
+    setVehicles((prev) => prev.map((v) => v.id === updatedVehicle.id ? updatedVehicle : v));
+    const disc = updatedVehicle.currentDiscipline || 'ROAD RACING';
+    const baseline = generateMaster37BaselineTune(updatedVehicle, disc);
+    handleUpdateTune(baseline);
   };
 
   const handleDeleteVehicle = (vehId: string) => {
@@ -135,7 +149,7 @@ export default function App() {
         {currentTab === 'tuner' && activeVehicle && activeTune && <TuneStudioPage vehicle={activeVehicle} tune={activeTune} onUpdateTune={handleUpdateTune} onSaveNewVersion={handleSaveNewVersion} onNavigateTab={setCurrentTab} />}
         {currentTab === 'test' && activeVehicle && activeTune && <TestDiagnosisPage vehicle={activeVehicle} tune={activeTune} onUpdateTune={handleUpdateTune} onSaveNewVersion={handleSaveNewVersion} onNavigateTab={setCurrentTab} />}
         {currentTab === 'history' && activeVehicle && activeTune && <HistoryPage vehicle={activeVehicle} currentTune={activeTune} historyItems={historyItems} onRevertToVersion={handleRevertToVersion} onNavigateTab={setCurrentTab} />}
-        {currentTab === 'matrix' && <MatrixPage />}
+        {currentTab === 'matrix' && <MatrixPage activeVehicle={activeVehicle} onAssignCategory={handleAssignCategory} />}
         {currentTab === 'settings' && <SettingsPage onDataReset={loadInitialData} />}
       </main>
       <GeminiDrawer isOpen={isGeminiOpen} onClose={() => setIsGeminiOpen(false)} activeVehicle={activeVehicle} activeTune={activeTune} />
