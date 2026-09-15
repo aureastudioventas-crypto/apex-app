@@ -37,120 +37,60 @@ export default function App() {
     const activeVeh = loadedVehicles.find(v => v.id === StorageService.getActiveVehicleId()) || loadedVehicles[0];
     const updatedTunes = { ...loadedTunes };
     let tunesUpdated = false;
-
     loadedVehicles.forEach((veh) => {
       const disc = veh.currentDiscipline || 'ROAD RACING';
       const compositeKey = `${veh.id}__${disc}`;
-      if (!updatedTunes[compositeKey]) {
-        const baseline = generateMaster37BaselineTune(veh, disc);
-        updatedTunes[compositeKey] = baseline;
-        StorageService.saveTune(baseline);
-        tunesUpdated = true;
-      }
+      if (!updatedTunes[compositeKey]) { const baseline = generateMaster37BaselineTune(veh, disc); updatedTunes[compositeKey] = baseline; StorageService.saveTune(baseline); tunesUpdated = true; }
     });
-
     setTunes(tunesUpdated ? updatedTunes : loadedTunes);
-    if (activeVeh) {
-      setActiveVehicleId(activeVeh.id);
-      setHistoryItems(StorageService.getHistoryForVehicle(activeVeh.id));
-    } else {
-      setActiveVehicleId('');
-      setHistoryItems([]);
-    }
+    if (activeVeh) { setActiveVehicleId(activeVeh.id); setHistoryItems(StorageService.getHistoryForVehicle(activeVeh.id)); }
+    else { setActiveVehicleId(''); setHistoryItems([]); }
   };
 
-  useEffect(() => {
-    loadInitialData();
-    CloudSync.sync().then(() => loadInitialData()).catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    if (activeVehicleId) setHistoryItems(StorageService.getHistoryForVehicle(activeVehicleId));
-  }, [activeVehicleId]);
+  useEffect(() => { loadInitialData(); CloudSync.sync().then(() => loadInitialData()).catch(() => undefined); }, []);
+  useEffect(() => { if (activeVehicleId) setHistoryItems(StorageService.getHistoryForVehicle(activeVehicleId)); }, [activeVehicleId]);
 
   const activeVehicle = vehicles.find((v) => v.id === activeVehicleId) || vehicles[0] || null;
   const activeDiscipline = activeVehicle?.currentDiscipline || 'ROAD RACING';
   const activeTune = activeVehicle ? tunes[`${activeVehicle.id}__${activeDiscipline}`] || tunes[activeVehicle.id] || null : null;
 
   const handleSelectVehicle = (id: string) => {
-    setActiveVehicleId(id);
-    StorageService.setActiveVehicleId(id);
+    setActiveVehicleId(id); StorageService.setActiveVehicleId(id);
     const v = vehicles.find((veh) => veh.id === id);
-    if (v) {
-      const disc = v.currentDiscipline || 'ROAD RACING';
-      const compositeKey = `${v.id}__${disc}`;
-      const tuneLoaded = tunes[compositeKey] || StorageService.getTune(v.id, disc);
-      if (tuneLoaded) setTunes((prev) => ({ ...prev, [compositeKey]: tuneLoaded }));
-    }
+    if (v) { const disc = v.currentDiscipline || 'ROAD RACING'; const compositeKey = `${v.id}__${disc}`; const tuneLoaded = tunes[compositeKey] || StorageService.getTune(v.id, disc); if (tuneLoaded) setTunes((prev) => ({ ...prev, [compositeKey]: tuneLoaded })); }
   };
 
   const handleUpdateTune = (updatedTune: Tune) => {
     const compositeKey = `${updatedTune.vehicleId}__${updatedTune.discipline}`;
     setTunes((prev) => ({ ...prev, [compositeKey]: updatedTune, [updatedTune.id]: updatedTune }));
-    StorageService.saveTune(updatedTune);
+    StorageService.saveTune(updatedTune); CloudSync.scheduleSync();
   };
 
   const handleSaveNewVersion = (tuneToSave: Tune, versionName: string, notes: string) => {
     const nextVer = Number((tuneToSave.version + 0.1).toFixed(1));
-    const paramSnapshots: Record<string, number> = {};
-    Object.keys(tuneToSave.parameters).forEach((k) => { paramSnapshots[k] = tuneToSave.parameters[k].value; });
-    const historyItem: TuneVersionHistoryItem = {
-      id: `ver-${Date.now()}`, tuneId: tuneToSave.id, vehicleId: tuneToSave.vehicleId, discipline: tuneToSave.discipline,
-      versionNumber: nextVer, versionName: versionName || `v${nextVer}`, versionTag: versionName || `v${nextVer}`, parentVersionId: null,
-      date: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-      changes: [notes || 'Actualización de reglaje'], originSymptom: 'Afinación en Tune Studio', engineeringReason: notes || 'Optimización dinámica en Tune Studio',
-      balanceSnapshot: tuneToSave.balance, parameterSnapshots: paramSnapshots, changesSummary: [notes || 'Actualización de reglaje'],
-    };
-    StorageService.addHistoryItem(historyItem);
-    setHistoryItems((prev) => [historyItem, ...prev]);
-    handleUpdateTune({ ...tuneToSave, version: nextVer, versionTag: versionName || `v${nextVer}`, updatedAt: new Date().toISOString() });
+    const paramSnapshots: Record<string, number> = {}; Object.keys(tuneToSave.parameters).forEach((k) => { paramSnapshots[k] = tuneToSave.parameters[k].value; });
+    const historyItem: TuneVersionHistoryItem = { id: `ver-${Date.now()}`, tuneId: tuneToSave.id, vehicleId: tuneToSave.vehicleId, discipline: tuneToSave.discipline, versionNumber: nextVer, versionName: versionName || `v${nextVer}`, versionTag: versionName || `v${nextVer}`, parentVersionId: null, date: new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }), changes: [notes || 'Actualización de reglaje'], originSymptom: 'Afinación en Tune Studio', engineeringReason: notes || 'Optimización dinámica en Tune Studio', balanceSnapshot: tuneToSave.balance, parameterSnapshots: paramSnapshots, changesSummary: [notes || 'Actualización de reglaje'] };
+    StorageService.addHistoryItem(historyItem); setHistoryItems((prev) => [historyItem, ...prev]); handleUpdateTune({ ...tuneToSave, version: nextVer, versionTag: versionName || `v${nextVer}`, updatedAt: new Date().toISOString() }); CloudSync.scheduleSync();
   };
 
   const handleRevertToVersion = (historyItem: TuneVersionHistoryItem) => {
-    if (!activeTune) return;
-    const restoredParams = { ...activeTune.parameters };
-    Object.keys(historyItem.parameterSnapshots || {}).forEach((k) => {
-      if (restoredParams[k]) restoredParams[k] = { ...restoredParams[k], value: historyItem.parameterSnapshots[k] };
-    });
-    handleUpdateTune({ ...activeTune, versionTag: `${historyItem.versionName} (Revertido)`, parameters: restoredParams, balance: historyItem.balanceSnapshot, updatedAt: new Date().toISOString() });
-    setCurrentTab('tuner');
+    if (!activeTune) return; const restoredParams = { ...activeTune.parameters }; Object.keys(historyItem.parameterSnapshots || {}).forEach((k) => { if (restoredParams[k]) restoredParams[k] = { ...restoredParams[k], value: historyItem.parameterSnapshots[k] }; }); handleUpdateTune({ ...activeTune, versionTag: `${historyItem.versionName} (Revertido)`, parameters: restoredParams, balance: historyItem.balanceSnapshot, updatedAt: new Date().toISOString() }); setCurrentTab('tuner');
   };
 
   const handleSaveVehicle = (veh: Vehicle) => {
-    StorageService.saveVehicle(veh);
-    const updatedVehicles = StorageService.getVehicles();
-    setVehicles(updatedVehicles);
-    setActiveVehicleId(veh.id);
-    const disc = veh.currentDiscipline || 'ROAD RACING';
-    const compositeKey = `${veh.id}__${disc}`;
-    if (!tunes[compositeKey]) handleUpdateTune(generateMaster37BaselineTune(veh, disc));
-    CloudSync.sync().catch(() => undefined);
+    StorageService.saveVehicle(veh); const updatedVehicles = StorageService.getVehicles(); setVehicles(updatedVehicles); setActiveVehicleId(veh.id); const disc = veh.currentDiscipline || 'ROAD RACING'; const compositeKey = `${veh.id}__${disc}`; if (!tunes[compositeKey]) handleUpdateTune(generateMaster37BaselineTune(veh, disc)); CloudSync.scheduleSync();
   };
 
   const handleAssignCategory = (categoryId: string) => {
-    if (!activeVehicle) return;
-    const updatedVehicle: Vehicle = { ...activeVehicle, categoryId, updatedAt: new Date().toISOString() };
-    StorageService.saveVehicle(updatedVehicle);
-    setVehicles((prev) => prev.map((v) => v.id === updatedVehicle.id ? updatedVehicle : v));
-    const disc = updatedVehicle.currentDiscipline || 'ROAD RACING';
-    const baseline = generateMaster37BaselineTune(updatedVehicle, disc);
-    handleUpdateTune(baseline);
-    CloudSync.sync().catch(() => undefined);
+    if (!activeVehicle) return; const updatedVehicle: Vehicle = { ...activeVehicle, categoryId, updatedAt: new Date().toISOString() }; StorageService.saveVehicle(updatedVehicle); setVehicles((prev) => prev.map((v) => v.id === updatedVehicle.id ? updatedVehicle : v)); const disc = updatedVehicle.currentDiscipline || 'ROAD RACING'; const baseline = generateMaster37BaselineTune(updatedVehicle, disc); handleUpdateTune(baseline); CloudSync.scheduleSync();
   };
 
   const handleDeleteVehicle = (vehId: string) => {
-    StorageService.deleteVehicle(vehId);
-    const updatedVehicles = StorageService.getVehicles();
-    setVehicles(updatedVehicles);
-    if (activeVehicleId === vehId && updatedVehicles.length > 0) setActiveVehicleId(updatedVehicles[0].id);
-    CloudSync.sync().catch(() => undefined);
+    StorageService.deleteVehicle(vehId); const updatedVehicles = StorageService.getVehicles(); setVehicles(updatedVehicles); if (activeVehicleId === vehId && updatedVehicles.length > 0) setActiveVehicleId(updatedVehicles[0].id); CloudSync.scheduleSync();
   };
 
   const handleTracksideQuickFix = (paramKey: string, newValue: number) => {
-    if (!activeTune || !activeTune.parameters[paramKey]) return;
-    const updatedParams = { ...activeTune.parameters, [paramKey]: { ...activeTune.parameters[paramKey], value: newValue } };
-    handleUpdateTune({ ...activeTune, parameters: updatedParams, updatedAt: new Date().toISOString() });
-    CloudSync.sync().catch(() => undefined);
+    if (!activeTune || !activeTune.parameters[paramKey]) return; const updatedParams = { ...activeTune.parameters, [paramKey]: { ...activeTune.parameters[paramKey], value: newValue } }; handleUpdateTune({ ...activeTune, parameters: updatedParams, updatedAt: new Date().toISOString() });
   };
 
   return (
