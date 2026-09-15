@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Cloud, LogOut, RefreshCw } from 'lucide-react';
-import { CloudSync, SyncStatus } from '../services/cloudSync';
+import { CloudSync, supabase, SyncStatus } from '../services/cloudSync';
 
 export function SyncPanel({ onSynced }: { onSynced: () => void }) {
   const [email, setEmail] = useState('');
@@ -19,7 +19,7 @@ export function SyncPanel({ onSynced }: { onSynced: () => void }) {
 
   useEffect(() => {
     refresh();
-    const { data: listener } = CloudSync.supabase.auth.onAuthStateChange(() => { refresh(); });
+    const { data: listener } = supabase.auth.onAuthStateChange(() => { refresh(); });
     return () => listener.subscription.unsubscribe();
   }, []);
 
