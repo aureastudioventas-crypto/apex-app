@@ -122,6 +122,12 @@ export function generateMaster37BaselineTune(
   setValue(params, 'rebound_front', reboundFrontPct === null ? null : params.rebound_front.min + (params.rebound_front.max - params.rebound_front.min) * reboundFrontPct / 100);
   setValue(params, 'rebound_rear', reboundRearPct === null ? null : params.rebound_rear.min + (params.rebound_rear.max - params.rebound_rear.min) * reboundRearPct / 100);
 
+  const expansionText = sheet.damping.match(/Expansión F\/R:\s*([^.]*)/i)?.[1] || '';
+  const expansionFrontPct = rangePairFromPct(expansionText, 'front');
+  const expansionRearPct = rangePairFromPct(expansionText, 'rear');
+  setValue(params, 'bump_front', expansionFrontPct === null ? null : params.bump_front.min + (params.bump_front.max - params.bump_front.min) * expansionFrontPct / 100);
+  setValue(params, 'bump_rear', expansionRearPct === null ? null : params.bump_rear.min + (params.bump_rear.max - params.bump_rear.min) * expansionRearPct / 100);
+
   const pressure = disciplinePressure(sheet, discipline);
   if (pressure) {
     setPressurePsi(params, 'tire_pressure_front', pressure[0]);
@@ -149,7 +155,7 @@ export function generateMaster37BaselineTune(
   convertDisplayUnits(params);
   tune.parameters = params;
   tune.versionTag = 'MASTER 37 / REV. 4.0';
-  tune.notes = `MASTER 37 / ${sheet.id} / ${sheet.name} / ${sheet.sourceVersion}. Valores iniciales derivados determinísticamente de los rangos de la hoja y validados por el motor.`;
+  tune.notes = `MASTER 37 / ${sheet.id} / ${sheet.name} / ${sheet.sourceVersion}. Valores iniciales derivados determinísticamente de los rangos de la hoja y validados por el motor. Aero de referencia de hoja: ${sheet.aero}.`;
   tune.updatedAt = new Date().toISOString();
   return tune;
 }
