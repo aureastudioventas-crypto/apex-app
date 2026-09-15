@@ -12,7 +12,9 @@ import { getMaster37Sheet, MASTER_37_SHEET_COUNT } from '../data/master37Sheets'
 import { generateBaselineTune } from './baselineEngine';
 
 const DISCIPLINE_INDEX: Record<Discipline, number> = { 'ROAD RACING': 0, 'STREET SCENE': 0, DIRT: 1, 'CROSS COUNTRY': 2, DRAG: 0, DRIFT: 0, CUSTOM: 0 };
-const PSI_TO_BAR = 0.0689475729;
+const BAR_TO_PSI = 14.5037738;
+const CM_TO_IN = 0.3937007874;
+const KGF_TO_LB = 2.2046226218;
 
 function parseNumber(value: string): number | null {
   const match = value.replace(',', '.').match(/[-+]?\d+(?:\.\d+)?/);
@@ -42,17 +44,28 @@ function setValue(params: Record<string, TuneParameter>, key: string, value: num
   params[key] = { ...param, value: Number(stepped.toFixed(param.step < 0.1 ? 2 : 1)), source, confidence: 100 };
 }
 
-function normalizePressureParameter(params: Record<string, TuneParameter>, key: string, bar: number | null): void {
+function setPressurePsi(params: Record<string, TuneParameter>, key: string, psi: number | null): void {
   const param = params[key];
-  if (!param || !param.isAvailable || bar === null) return;
-  params[key] = { ...param, unit: 'bar', min: 1.0, max: 3.8, step: 0.05, value: Number(Math.max(1.0, Math.min(3.8, bar)).toFixed(2)), source: 'MASTER37', confidence: 100 };
+  if (!param || !param.isAvailable || psi === null || !Number.isFinite(psi)) return;
+  params[key] = { ...param, unit: 'psi', min: 15, max: 55, step: 0.5, value: Number(Math.max(15, Math.min(55, psi)).toFixed(1)), source: 'MASTER37', confidence: 100 };
+}
+
+function convertDisplayUnits(params: Record<string, TuneParameter>): void {
+  ['ride_height_front', 'ride_height_rear'].forEach(key => {
+    const p = params[key];
+    if (p && p.isAvailable && p.unit.toLowerCase() === 'cm') params[key] = { ...p, unit: 'in', value: Number((p.value * CM_TO_IN).toFixed(2)), min: Number((p.min * CM_TO_IN).toFixed(2)), max: Number((p.max * CM_TO_IN).toFixed(2)), step: Number((p.step * CM_TO_IN).toFixed(3)) };
+  });
+  ['aero_front', 'aero_rear'].forEach(key => {
+    const p = params[key];
+    if (p && p.isAvailable && p.unit.toLowerCase() === 'kgf') params[key] = { ...p, unit: 'lb', value: Number((p.value * KGF_TO_LB).toFixed(1)), min: Number((p.min * KGF_TO_LB).toFixed(1)), max: Number((p.max * KGF_TO_LB).toFixed(1)), step: Number((p.step * KGF_TO_LB).toFixed(1)) };
+  });
 }
 
 function disciplinePressure(sheet: ReturnType<typeof getMaster37Sheet>, discipline: Discipline): [number, number] | null {
   if (!sheet) return null;
   const label = discipline === 'CROSS COUNTRY' ? 'XC' : discipline === 'DIRT' ? 'Tierra' : 'Carretera';
   const match = sheet.tirePressuresBar.match(new RegExp(`${label}[^·]*?([0-9]+(?:[.,][0-9]+)?)\\s*/\\s*([0-9]+(?:[.,][0-9]+)?)\\s*bar`, 'i'));
-  return match ? [Number(match[1].replace(',', '.')), Number(match[2].replace(',', '.'))] : null;
+  return match ? [Number(match[1].replace(',', '.')) * BAR_TO_PSI, Number(match[2].replace(',', '.')) * BAR_TO_PSI] : null;
 }
 
 function differentialPairs(sheet: ReturnType<typeof getMaster37Sheet>, drivetrain: Drivetrain): number[] | null {
@@ -73,15 +86,16 @@ export function generateMaster37BaselineTune(
 ): Tune {
   const tune = generateBaselineTune(vehicle, discipline, driverProfile, hardwareProfile);
   const sheet = vehicle.categoryId ? getMaster37Sheet(vehicle.categoryId) : undefined;
-
-  // El sistema trabaja en bar; convierte incluso el fallback heredado de psi.
   const params = { ...tune.parameters };
+
   ['tire_pressure_front', 'tire_pressure_rear'].forEach(key => {
     const p = params[key];
-    if (p && p.unit.toLowerCase() === 'psi') normalizePressureParameter(params, key, p.value * PSI_TO_BAR);
+    if (p && p.unit.toLowerCase() === 'bar') setPressurePsi(params, key, p.value * BAR_TO_PSI);
+    else if (p && p.unit.toLowerCase() === 'psi') setPressurePsi(params, key, p.value);
   });
 
   if (!sheet) {
+    convertDisplayUnits(params);
     tune.parameters = params;
     tune.notes = `${tune.notes || ''} | MASTER 37: categoría no seleccionada; se conserva baseline genérico. Hay ${MASTER_37_SHEET_COUNT} hojas Rev. 4.0 disponibles.`;
     return tune;
@@ -110,8 +124,8 @@ export function generateMaster37BaselineTune(
 
   const pressure = disciplinePressure(sheet, discipline);
   if (pressure) {
-    normalizePressureParameter(params, 'tire_pressure_front', pressure[0]);
-    normalizePressureParameter(params, 'tire_pressure_rear', pressure[1]);
+    setPressurePsi(params, 'tire_pressure_front', pressure[0]);
+    setPressurePsi(params, 'tire_pressure_rear', pressure[1]);
   }
 
   const diff = differentialPairs(sheet, vehicle.drivetrain);
@@ -132,6 +146,7 @@ export function generateMaster37BaselineTune(
   setValue(params, 'brake_balance', brake ? midpoint([Number(brake[1]), Number(brake[2])]) : null);
   setValue(params, 'brake_pressure', parseNumber(sheet.brakeBalance.match(/presión\s+(\d+)%/i)?.[1] || ''));
 
+  convertDisplayUnits(params);
   tune.parameters = params;
   tune.versionTag = 'MASTER 37 / REV. 4.0';
   tune.notes = `MASTER 37 / ${sheet.id} / ${sheet.name} / ${sheet.sourceVersion}. Valores iniciales derivados determinísticamente de los rangos de la hoja y validados por el motor.`;
