@@ -6,8 +6,10 @@
 import React, { useState, useEffect } from 'react';
 import { Vehicle, Tune, TuneVersionHistoryItem } from './types';
 import { StorageService } from './services/storage';
+import { CloudSync } from './services/cloudSync';
 import { generateMaster37BaselineTune } from './engine/master37BaselineEngine';
 import { Header } from './components/Header';
+import { SyncPanel } from './components/SyncPanel';
 import { GaragePage } from './pages/GaragePage';
 import { VehiclesPage } from './pages/VehiclesPage';
 import { TuneStudioPage } from './pages/TuneStudioPage';
@@ -32,7 +34,7 @@ export default function App() {
     const loadedVehicles = StorageService.getVehicles();
     setVehicles(loadedVehicles);
     const loadedTunes = StorageService.getTunes();
-    const activeVeh = loadedVehicles[0];
+    const activeVeh = loadedVehicles.find(v => v.id === StorageService.getActiveVehicleId()) || loadedVehicles[0];
     const updatedTunes = { ...loadedTunes };
     let tunesUpdated = false;
 
@@ -51,10 +53,17 @@ export default function App() {
     if (activeVeh) {
       setActiveVehicleId(activeVeh.id);
       setHistoryItems(StorageService.getHistoryForVehicle(activeVeh.id));
+    } else {
+      setActiveVehicleId('');
+      setHistoryItems([]);
     }
   };
 
-  useEffect(() => { loadInitialData(); }, []);
+  useEffect(() => {
+    loadInitialData();
+    CloudSync.sync().then(() => loadInitialData()).catch(() => undefined);
+  }, []);
+
   useEffect(() => {
     if (activeVehicleId) setHistoryItems(StorageService.getHistoryForVehicle(activeVehicleId));
   }, [activeVehicleId]);
@@ -115,6 +124,7 @@ export default function App() {
     const disc = veh.currentDiscipline || 'ROAD RACING';
     const compositeKey = `${veh.id}__${disc}`;
     if (!tunes[compositeKey]) handleUpdateTune(generateMaster37BaselineTune(veh, disc));
+    CloudSync.sync().catch(() => undefined);
   };
 
   const handleAssignCategory = (categoryId: string) => {
@@ -125,6 +135,7 @@ export default function App() {
     const disc = updatedVehicle.currentDiscipline || 'ROAD RACING';
     const baseline = generateMaster37BaselineTune(updatedVehicle, disc);
     handleUpdateTune(baseline);
+    CloudSync.sync().catch(() => undefined);
   };
 
   const handleDeleteVehicle = (vehId: string) => {
@@ -132,12 +143,14 @@ export default function App() {
     const updatedVehicles = StorageService.getVehicles();
     setVehicles(updatedVehicles);
     if (activeVehicleId === vehId && updatedVehicles.length > 0) setActiveVehicleId(updatedVehicles[0].id);
+    CloudSync.sync().catch(() => undefined);
   };
 
   const handleTracksideQuickFix = (paramKey: string, newValue: number) => {
     if (!activeTune || !activeTune.parameters[paramKey]) return;
     const updatedParams = { ...activeTune.parameters, [paramKey]: { ...activeTune.parameters[paramKey], value: newValue } };
     handleUpdateTune({ ...activeTune, parameters: updatedParams, updatedAt: new Date().toISOString() });
+    CloudSync.sync().catch(() => undefined);
   };
 
   return (
@@ -154,6 +167,7 @@ export default function App() {
       </main>
       <GeminiDrawer isOpen={isGeminiOpen} onClose={() => setIsGeminiOpen(false)} activeVehicle={activeVehicle} activeTune={activeTune} />
       <TracksideModal isOpen={isTracksideOpen} onClose={() => setIsTracksideOpen(false)} activeVehicle={activeVehicle} activeTune={activeTune} onApplyQuickFix={handleTracksideQuickFix} />
+      <SyncPanel onSynced={loadInitialData} />
     </div>
   );
 }
