@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.apexingenieria.apextuningengine',
   appName: 'APEX TUNING ENGINE',
   webDir: 'dist',
-  bundledWebRuntime: false,
 };
 
 export default config;
