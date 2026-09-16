@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Cloud, LogOut, RefreshCw } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { App } from '@capacitor/app';
 import { CloudSync, supabase, SyncStatus } from '../services/cloudSync';
+
+const NATIVE_AUTH_REDIRECT = 'apex://auth-callback/';
 
 export function SyncPanel({ onSynced }: { onSynced: () => void }) {
   const [email, setEmail] = useState('');
@@ -20,15 +24,37 @@ export function SyncPanel({ onSynced }: { onSynced: () => void }) {
   useEffect(() => {
     refresh();
     const { data: listener } = supabase.auth.onAuthStateChange(() => { refresh(); });
-    return () => listener.subscription.unsubscribe();
+    let cleanup = () => undefined;
+    if (Capacitor.isNativePlatform()) {
+      App.addListener('appUrlOpen', async ({ url }) => {
+        if (!url.startsWith(NATIVE_AUTH_REDIRECT)) return;
+        try {
+          const parsed = new URL(url);
+          const code = parsed.searchParams.get('code');
+          if (code) await supabase.auth.exchangeCodeForSession(code);
+          else {
+            const params = new URLSearchParams(parsed.hash.replace(/^#/, ''));
+            const access_token = params.get('access_token');
+            const refresh_token = params.get('refresh_token');
+            if (access_token && refresh_token) await supabase.auth.setSession({ access_token, refresh_token });
+          }
+          await refresh();
+        } catch (error) { setStatus('error'); setMessage(error instanceof Error ? error.message : 'No se pudo completar el acceso.'); }
+      }).then(listenerHandle => { cleanup = () => { void listenerHandle.remove(); }; });
+    }
+    return () => { listener.subscription.unsubscribe(); cleanup(); };
   }, []);
 
   const sendLink = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!email.trim()) return;
     setStatus('syncing'); setMessage('');
-    try { await CloudSync.sendMagicLink(email); setMessage('Enlace enviado. Ábrelo en este dispositivo para activar la misma cuenta.'); }
-    catch (error) { setStatus('error'); setMessage(error instanceof Error ? error.message : 'No se pudo enviar el enlace.'); }
+    try {
+      const redirect = Capacitor.isNativePlatform() ? NATIVE_AUTH_REDIRECT : window.location.origin;
+      const { error } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { emailRedirectTo: redirect } });
+      if (error) throw error;
+      setMessage('Enlace enviado. Ábrelo en este dispositivo para activar la misma cuenta.');
+    } catch (error) { setStatus('error'); setMessage(error instanceof Error ? error.message : 'No se pudo enviar el enlace.'); }
   };
 
   const syncNow = async () => { setStatus('syncing'); setMessage(''); try { await CloudSync.sync(); setStatus('synced'); onSynced(); } catch (error) { setStatus('error'); setMessage(error instanceof Error ? error.message : 'No se pudo sincronizar.'); } };
@@ -37,21 +63,7 @@ export function SyncPanel({ onSynced }: { onSynced: () => void }) {
   return (
     <div className="fixed bottom-4 right-4 z-50 w-[min(92vw,360px)] rounded-2xl border border-slate-700 bg-slate-900/95 p-4 shadow-2xl backdrop-blur">
       <div className="flex items-center gap-2 mb-2"><Cloud size={18} className="text-cyan-400"/><strong>Sincronización APEX</strong></div>
-      {userEmail ? (
-        <>
-          <div className="text-xs text-slate-400 mb-3 break-all">Cuenta: {userEmail}</div>
-          <div className="flex gap-2">
-            <button onClick={syncNow} disabled={status === 'syncing'} className="flex-1 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50"><RefreshCw size={14} className="inline mr-1"/> {status === 'syncing' ? 'Sincronizando…' : 'Sincronizar'}</button>
-            <button onClick={signOut} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300"><LogOut size={14}/></button>
-          </div>
-        </>
-      ) : (
-        <form onSubmit={sendLink}>
-          <p className="text-xs text-slate-400 mb-3">Usa el mismo correo en PC y teléfono. No necesitas contraseña: recibirás un enlace de acceso.</p>
-          <input value={email} onChange={e => setEmail(e.target.value)} type="email" required placeholder="tu-correo@ejemplo.com" className="mb-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none"/>
-          <button disabled={status === 'syncing'} className="w-full rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">{status === 'syncing' ? 'Enviando…' : 'Activar sincronización'}</button>
-        </form>
-      )}
+      {userEmail ? (<><div className="text-xs text-slate-400 mb-3 break-all">Cuenta: {userEmail}</div><div className="flex gap-2"><button onClick={syncNow} disabled={status === 'syncing'} className="flex-1 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50"><RefreshCw size={14} className="inline mr-1"/> {status === 'syncing' ? 'Sincronizando…' : 'Sincronizar'}</button><button onClick={signOut} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300"><LogOut size={14}/></button></div></>) : (<form onSubmit={sendLink}><p className="text-xs text-slate-400 mb-3">Usa el mismo correo en PC y teléfono. No necesitas contraseña: recibirás un enlace de acceso.</p><input value={email} onChange={e => setEmail(e.target.value)} type="email" required placeholder="tu-correo@ejemplo.com" className="mb-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none"/><button disabled={status === 'syncing'} className="w-full rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50">{status === 'syncing' ? 'Enviando…' : 'Activar sincronización'}</button></form>)}
       {status === 'synced' && <div className="mt-2 text-xs text-emerald-400">✓ Datos sincronizados entre dispositivos.</div>}
       {message && <div className="mt-2 text-xs text-slate-300">{message}</div>}
     </div>
