@@ -34,7 +34,10 @@ jobs:
       - name: Generate Android project
         run: npx cap add android
 
-      - name: Build web bundle and sync Capacitor
+      - name: Build web bundle
+        run: npm run build:web
+
+      - name: Sync Capacitor
         run: npx cap sync android
 
       - name: Build debug APK
