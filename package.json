@@ -12,7 +12,8 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "cap:sync": "npm run build:web && npx cap sync android",
-    "cap:open": "npx cap open android"
+    "cap:open": "npx cap open android",
+    "cap:configure-android": "node scripts/configure-android-deeplink.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
