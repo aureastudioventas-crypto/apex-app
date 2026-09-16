@@ -15,5 +15,6 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - run: npm install @capacitor/app@^8.0.0 --no-save
       - run: npm run lint
       - run: npm run build
