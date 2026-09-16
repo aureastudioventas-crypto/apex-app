@@ -22,6 +22,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Install Capacitor App plugin for native auth
+        run: npm install @capacitor/app@^8.0.0 --no-save
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -38,6 +41,9 @@ jobs:
 
       - name: Generate Android project
         run: npx cap add android
+
+      - name: Configure APEX Android auth deep link
+        run: npm run cap:configure-android
 
       - name: Build web bundle
         run: npm run build:web
