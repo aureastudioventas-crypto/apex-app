@@ -1,1 +1,0 @@
-export const NATIVE_AUTH_REDIRECT = 'apex://auth-callback/';
