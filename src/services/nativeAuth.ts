@@ -1,15 +1,10 @@
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { supabase } from './cloudSync';
-
-const NATIVE_REDIRECT = 'apex://auth-callback/';
-
-export function getAuthRedirectUrl(): string {
-  return Capacitor.isNativePlatform() ? NATIVE_REDIRECT : window.location.origin;
-}
+import { NATIVE_AUTH_REDIRECT } from './authRedirect';
 
 export async function handleNativeAuthUrl(url: string): Promise<boolean> {
-  if (!Capacitor.isNativePlatform() || !url.startsWith('apex://auth-callback')) return false;
+  if (!Capacitor.isNativePlatform() || !url.startsWith(NATIVE_AUTH_REDIRECT)) return false;
   const parsed = new URL(url);
   const error = parsed.searchParams.get('error_description') || parsed.searchParams.get('error');
   if (error) throw new Error(decodeURIComponent(error));
@@ -33,8 +28,11 @@ export async function handleNativeAuthUrl(url: string): Promise<boolean> {
 export async function installNativeAuthListener(onAuthenticated?: () => void): Promise<() => void> {
   if (!Capacitor.isNativePlatform()) return () => undefined;
   const handle = async (url: string) => {
-    try { if (await handleNativeAuthUrl(url)) onAuthenticated?.(); }
-    catch (error) { console.error('APEX native auth callback failed', error); }
+    try {
+      if (await handleNativeAuthUrl(url)) onAuthenticated?.();
+    } catch (error) {
+      console.error('APEX native auth callback failed', error);
+    }
   };
   const listener = await App.addListener('appUrlOpen', ({ url }) => { void handle(url); });
   const launch = await App.getLaunchUrl();
