@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Vehicle, Tune, TuneVersionHistoryItem } from './types';
 import { StorageService } from './services/storage';
 import { CloudSync } from './services/cloudSync';
+import { installNativeAuthListener } from './services/nativeAuth';
 import { generateMaster37BaselineTune } from './engine/master37BaselineEngine';
 import { Header } from './components/Header';
 import { SyncPanel } from './components/SyncPanel';
@@ -49,6 +50,7 @@ export default function App() {
 
   useEffect(() => { loadInitialData(); CloudSync.sync().then(() => loadInitialData()).catch(() => undefined); }, []);
   useEffect(() => { if (activeVehicleId) setHistoryItems(StorageService.getHistoryForVehicle(activeVehicleId)); }, [activeVehicleId]);
+  useEffect(() => { let cleanup: (() => void) | undefined; installNativeAuthListener(loadInitialData).then(fn => { cleanup = fn; }).catch(() => undefined); return () => cleanup?.(); }, []);
 
   const activeVehicle = vehicles.find((v) => v.id === activeVehicleId) || vehicles[0] || null;
   const activeDiscipline = activeVehicle?.currentDiscipline || 'ROAD RACING';

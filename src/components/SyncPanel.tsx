@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Cloud, LogOut, RefreshCw } from 'lucide-react';
+import { Cloud, LogOut, RefreshCw, X } from 'lucide-react';
 import { CloudSync, supabase, SyncStatus } from '../services/cloudSync';
 
 export function SyncPanel({ onSynced }: { onSynced: () => void }) {
@@ -7,42 +7,85 @@ export function SyncPanel({ onSynced }: { onSynced: () => void }) {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [status, setStatus] = useState<SyncStatus>('offline');
   const [message, setMessage] = useState('');
+  const [isOpen, setIsOpen] = useState(true);
 
   const refresh = async () => {
     const user = await CloudSync.getUser();
     setUserEmail(user?.email ?? null);
-    if (!user) { setStatus('signed-out'); return; }
+    if (!user) { setStatus('signed-out'); setIsOpen(true); return; }
     setStatus('syncing');
-    try { await CloudSync.sync(); setStatus('synced'); onSynced(); }
-    catch (error) { setStatus('error'); setMessage(error instanceof Error ? error.message : 'No se pudo sincronizar.'); }
+    try {
+      await CloudSync.sync();
+      setStatus('synced');
+      onSynced();
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'No se pudo sincronizar.');
+    }
   };
 
   useEffect(() => {
-    refresh();
-    const { data: listener } = supabase.auth.onAuthStateChange(() => { refresh(); });
+    void refresh();
+    const { data: listener } = supabase.auth.onAuthStateChange(() => {
+      setTimeout(() => { void refresh(); }, 0);
+    });
     return () => listener.subscription.unsubscribe();
   }, []);
 
   const sendLink = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!email.trim()) return;
-    setStatus('syncing'); setMessage('');
-    try { await CloudSync.sendMagicLink(email); setMessage('Enlace enviado. Ábrelo en este dispositivo para activar la misma cuenta.'); }
-    catch (error) { setStatus('error'); setMessage(error instanceof Error ? error.message : 'No se pudo enviar el enlace.'); }
+    setStatus('syncing');
+    setMessage('');
+    try {
+      await CloudSync.sendMagicLink(email);
+      setMessage('Enlace enviado. Ábrelo en este dispositivo para activar la misma cuenta.');
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'No se pudo enviar el enlace.');
+    }
   };
 
-  const syncNow = async () => { setStatus('syncing'); setMessage(''); try { await CloudSync.sync(); setStatus('synced'); onSynced(); } catch (error) { setStatus('error'); setMessage(error instanceof Error ? error.message : 'No se pudo sincronizar.'); } };
-  const signOut = async () => { await CloudSync.signOut(); setUserEmail(null); setStatus('signed-out'); };
+  const syncNow = async () => {
+    setStatus('syncing');
+    setMessage('');
+    try {
+      await CloudSync.sync();
+      setStatus('synced');
+      onSynced();
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'No se pudo sincronizar.');
+    }
+  };
+
+  const signOut = async () => {
+    await CloudSync.signOut();
+    setUserEmail(null);
+    setStatus('signed-out');
+    setIsOpen(true);
+  };
+
+  if (!isOpen && userEmail) {
+    return (
+      <button onClick={() => setIsOpen(true)} className="fixed bottom-4 right-4 z-50 rounded-full border border-slate-700 bg-slate-900/95 p-3 text-cyan-400 shadow-2xl" aria-label="Abrir Sincronización APEX" title="Sincronización APEX">
+        <Cloud size={18} />
+      </button>
+    );
+  }
 
   return (
     <div className="fixed bottom-4 right-4 z-50 w-[min(92vw,360px)] rounded-2xl border border-slate-700 bg-slate-900/95 p-4 shadow-2xl backdrop-blur">
-      <div className="flex items-center gap-2 mb-2"><Cloud size={18} className="text-cyan-400"/><strong>Sincronización APEX</strong></div>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2"><Cloud size={18} className="text-cyan-400"/><strong>Sincronización APEX</strong></div>
+        {userEmail && <button onClick={() => setIsOpen(false)} className="rounded-md p-1 text-slate-400 hover:text-slate-100" aria-label="Cerrar panel"><X size={18}/></button>}
+      </div>
       {userEmail ? (
         <>
           <div className="text-xs text-slate-400 mb-3 break-all">Cuenta: {userEmail}</div>
           <div className="flex gap-2">
             <button onClick={syncNow} disabled={status === 'syncing'} className="flex-1 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 disabled:opacity-50"><RefreshCw size={14} className="inline mr-1"/> {status === 'syncing' ? 'Sincronizando…' : 'Sincronizar'}</button>
-            <button onClick={signOut} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300"><LogOut size={14}/></button>
+            <button onClick={signOut} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300" title="Cerrar sesión"><LogOut size={14}/></button>
           </div>
         </>
       ) : (
