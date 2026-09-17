@@ -1,7 +1,7 @@
 import { createClient, type User } from '@supabase/supabase-js';
 import { Vehicle, Tune, TestSession, TuneVersionHistoryItem } from '../types';
 import { StorageService } from './storage';
-import { getAuthRedirectUrl } from './nativeAuth';
+import { getAuthRedirectUrl } from './authRedirect';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://lzrclnobhyryswvhoslc.supabase.co';
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_TF8nuNgx-hb_fTHfC_cbrw_f7X_JfU_';
