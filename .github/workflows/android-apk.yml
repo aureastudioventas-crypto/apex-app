@@ -22,6 +22,9 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Verify TypeScript
+        run: npm run lint
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -40,22 +43,7 @@ jobs:
         run: npx cap add android
 
       - name: Configure APEX Android auth deep link
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('android/app/src/main/AndroidManifest.xml')
-          text = p.read_text()
-          scheme = 'android:scheme="apex"'
-          host = 'android:host="auth-callback"'
-          if scheme not in text or host not in text:
-              marker = '</activity>'
-              intent = '''\n            <intent-filter>\n              <action android:name="android.intent.action.VIEW" />\n              <category android:name="android.intent.category.DEFAULT" />\n              <category android:name="android.intent.category.BROWSABLE" />\n              <data android:scheme="apex" android:host="auth-callback" />\n            </intent-filter>\n          '''
-              if marker not in text:
-                  raise SystemExit(f'Could not find {marker} in {p}')
-              text = text.replace(marker, intent + marker, 1)
-              p.write_text(text)
-          print('APEX auth deep link configured: apex://auth-callback/')
-          PY
+        run: npm run cap:configure-android
 
       - name: Build web bundle
         run: npm run build:web
